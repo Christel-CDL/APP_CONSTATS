@@ -1,0 +1,54 @@
+CONSTAt — VERSION CORRIGÉE
+
+Ouvrez OUVRIR_CONSTAT.cmd pour lancer l’application dans votre navigateur.
+Le serveur est local à cet ordinateur. L’adresse est http://127.0.0.1:8765/
+Node.js est déjà installé sur cet ordinateur.
+
+1. Nouveau constat, puis Continuer.
+2. Saisissez le nom du désordre ou du lieu puis « Ajouter et sélectionner ».
+3. Prenez ou importez autant de photos que nécessaire : 5, 10 ou plus.
+4. Pour un autre désordre, ajoutez un nouveau nom. Les onglets permettent
+   de revenir au précédent. Tous restent dans le même constat et rapport.
+5. Les photos sont réduites automatiquement à 1 600 pixels maximum sur
+   leur grand côté, en JPEG. Vos fichiers d’origine ne sont pas modifiés.
+6. Les notes manuscrites et les lecteurs audio sont sous la photo.
+   La transcription pendant la dictée dépend du navigateur et de son
+   service de reconnaissance. Elle peut nécessiter Internet. Les anciens
+   fichiers audio ne sont pas transcrits automatiquement.
+7. Dans la synthèse, corrigez les textes et cochez les éléments à exporter.
+8. « Exporter en PDF » télécharge le rapport avec les éléments cochés.
+   « PDF sans commentaires (photos seules) » exclut tous les textes de
+   description, commentaires, transcriptions, notes manuscrites et actions.
+9. « Préparer l’e-mail » ouvre votre messagerie. Ajoutez le PDF téléchargé
+   en pièce jointe avant de cliquer sur Envoyer. Rien n’est envoyé seul.
+10. Sauvegardez régulièrement la visite dans un fichier avec le bouton
+    situé en bas de la page. Ce fichier contient aussi photos et audios.
+
+BROUILLONS SUR LE TERRAIN
+Le bouton « Enregistrer le brouillon » est en haut du constat.
+Attendez le message « Brouillon enregistré ». La sauvegarde automatique
+conserve également les modifications. « Mes brouillons », dans le menu
+de gauche, permet de rouvrir chaque constat pour le corriger ou le compléter.
+Un nouveau constat conserve le précédent. Ces brouillons restent sur le
+même appareil et dans le même navigateur ; ils ne sont pas synchronisés
+avec un autre appareil. La sauvegarde dans un fichier permet leur transfert.
+
+IMPORTANT POUR LA REPRISE
+Cette nouvelle version est dans un autre dossier que le prototype OneDrive.
+Les essais de l’ancien fichier index.html peuvent rester dans le stockage
+de cet ancien fichier/navigateur. Ils ne sont pas transférés automatiquement.
+Conservez votre ancien onglet et votre ancien dossier si vous avez une
+visite à récupérer. Les audios perdus par l’ancienne version après fermeture
+ne sont pas récupérables ici.
+
+La carte OpenStreetMap utilise Internet ; un repère est affiché à la fois.
+Une position de visite ne prouve pas où une photo importée a été prise.
+Le PDF inclut les coordonnées associées, pas le fond cartographique.
+Le fichier Word reste l’export HTML .doc du prototype ; le PDF est un vrai PDF.
+Les connexions SharePoint, la transcription différée et les essais matériels
+sur iPad/Samsung restent à réaliser.
+
+Sources techniques :
+https://developer.mozilla.org/en-US/docs/Web/API/SpeechRecognition
+https://developer.mozilla.org/en-US/docs/Web/HTML/Reference/Attributes/capture
+https://www.openstreetmap.org/copyright
