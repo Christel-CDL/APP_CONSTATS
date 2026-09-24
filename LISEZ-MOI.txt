@@ -44,9 +44,22 @@ ne sont pas récupérables ici.
 La carte OpenStreetMap utilise Internet ; un repère est affiché à la fois.
 Une position de visite ne prouve pas où une photo importée a été prise.
 Le PDF inclut les coordonnées associées, pas le fond cartographique.
-Le fichier Word reste l’export HTML .doc du prototype ; le PDF est un vrai PDF.
+Le fichier Word est désormais un vrai .docx modifiable ; le PDF est un vrai PDF.
 Les connexions SharePoint, la transcription différée et les essais matériels
 sur iPad/Samsung restent à réaliser.
+
+STABILISATION DU 24 SEPTEMBRE
+Les accès caméra, micro et localisation sont proposés au démarrage du constat.
+« Préparer / réessayer les accès » permet de les réactiver après un refus.
+« Suspendre les accès » arrête les appareils et le suivi de position.
+Les photos importées et celles du sélecteur natif n'ont pas de GPS automatique :
+associez la position manuellement uniquement si vous êtes au lieu photographié.
+Renseignez votre dossier, sa référence et la date dans la première étape.
+La gomme se trouve à côté du stylo dans la fenêtre de dessin.
+Le mode hors connexion est prêt lorsque le message le confirme en bas de page.
+Une première ouverture avec connexion est nécessaire. La carte et la dictée
+en ligne restent indisponibles sans réseau. Gardez des copies JSON des visites.
+Le rendu dans Word et les essais sur appareils réels restent à confirmer.
 
 Sources techniques :
 https://developer.mozilla.org/en-US/docs/Web/API/SpeechRecognition

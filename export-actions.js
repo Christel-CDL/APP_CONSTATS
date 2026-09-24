@@ -8,6 +8,7 @@ function printReport(clean=false){
   Promise.all(images.map(img=>img.decode().catch(()=>{}))).then(()=>{document.title=clean?'Constat - photos seules':'Constat - rapport commenté';window.print();});
 }
 async function downloadPdf(clean){
+  if(visitBusy()){alert('Terminez la capture avant de créer le rapport.');return;}
   if(!state.photos.length){alert('Ajoutez au moins une photo au constat.');return;}
   const buttons=[$('#export-pdf'),$('#export-clean-pdf')];buttons.forEach(b=>b.disabled=true);
   try{updateReportContent();const photos=structuredClone(state.photos);for(const photo of photos){photo.pdfSrc=await compressPhoto(photo.annotatedSrc||photo.src);}
@@ -21,7 +22,7 @@ $('#export-clean-pdf').addEventListener('click',()=>downloadPdf(true));
 window.addEventListener('afterprint',()=>{document.title='Constat — Rapports de terrain';});
 $('#prepare-email').addEventListener('click',()=>{
   const field=$('#mail-recipient');if(!field.value.trim()||!field.reportValidity()){field.focus();return;}
-  const subject='Reportage photographique — '+$$('.case-option')[state.caseIndex].querySelector('b').textContent;
+  const subject='Reportage photographique — '+(state.caseName||'Constat de terrain');
   const body='Bonjour,\n\nVeuillez trouver en pièce jointe le reportage photographique du constat.\n\nCordialement\n\n[Avant l’envoi : joindre le fichier PDF exporté et supprimer cette ligne.]';
   const link=document.createElement('a');link.href=`mailto:${encodeURIComponent(field.value.trim())}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;link.click();
 });

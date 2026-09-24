@@ -22,7 +22,7 @@ async function buildConstatPdf(data, library=globalThis.PDFLib){
       for(const photo of pair){
         const lines=[];
         for(const [field,label] of [['description','Description'],['comment','Commentaires'],['transcript','Transcription']])if(include(photo,field)&&photo[field]?.trim())lines.push(...wrap(label+' : '+photo[field]),'');
-        if(photo.position&&Number.isFinite(photo.position.lat)&&Number.isFinite(photo.position.lng))lines.push(...wrap(`Position ${photo.position.source==='capture'?'à la capture':'associée'} : ${photo.position.lat.toFixed(6)}, ${photo.position.lng.toFixed(6)}`,10));
+        if(photo.position&&Number.isFinite(photo.position.lat)&&Number.isFinite(photo.position.lng))lines.push(...wrap(`Position ${photo.position.source==='capture'?'à la capture':'associée'} : ${photo.position.lat.toFixed(6)}, ${photo.position.lng.toFixed(6)}`,12));
         cards.push({photo,image:await embed(photo.pdfSrc||photo.annotatedSrc||photo.src),drawing:include(photo,'drawing')&&photo.drawing?await embed(photo.drawing):null,lines});
       }
       let first=true;

@@ -106,3 +106,14 @@ Le prototype actuel comprend :
 - Nouveau constat conserve le précédent ; reprise, correction et compléments possibles.
 - Tests navigateur : sauvegarde de 5 photos / 2 sujets, nouveau constat, reprise et rechargement ; les 5 photos sont conservées.
 - Stockage local au navigateur et à l’appareil, sans synchronisation distante. Export/import JSON disponible pour une copie complète.
+
+## Stabilisation du 24 septembre 2026
+
+- Intégration effective du stylo et de la gomme, auparavant non reliés à des boutons présents.
+- Préparation des accès au démarrage, réutilisation des pistes médias, suspension explicite et rejet des retours d'autorisation après annulation.
+- Position récente à la capture ; absence de position automatique pour les photos importées et le sélecteur natif.
+- Dossier, référence et date modifiables et sauvegardés avec le constat.
+- Export Word natif .docx incorporant images et textes sélectionnés, A4 et Arial 12.
+- Service worker limité au dossier de l'application pour rechargement et exports sans réseau après une première ouverture connectée.
+- Protection du brouillon courant en cas d'échec de sauvegarde et avant import d'une autre visite.
+- Tests navigateur, cas d'échec et rapports longs ajoutés au dépôt. Détails et limites actuelles dans REPRISE_DEPLOIEMENT.md.
