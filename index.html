@@ -14,16 +14,12 @@
       <a class="brand" href="#" aria-label="Accueil Constat"><span class="brand-mark">C.</span><span>constat</span></a>
       <nav aria-label="Navigation principale">
         <button class="nav-item active" data-view="dashboard"><span class="icon">⌂</span>Vue d'ensemble</button>
-        <button class="nav-item" data-view="dossiers"><span class="icon">▱</span>Mes dossiers<span class="badge">12</span></button>
+        <button class="nav-item" data-view="dossiers"><span class="icon">▱</span>Mes dossiers<span class="badge" id="dossier-count" hidden>0</span></button>
         <button class="nav-item" data-view="constats"><span class="icon">◎</span>Mes brouillons</button>
         <button class="nav-item" data-view="rapports"><span class="icon">≡</span>Rapports</button>
       </nav>
       <div class="sidebar-bottom">
-        <button class="nav-item"><span class="icon">?</span>Centre d'aide</button>
-        <button class="nav-item"><span class="icon">⚙</span>Paramètres</button>
-        <div class="user-card">
-          <div class="avatar">JM</div><div><strong>Jean Martin</strong><small>Expert bâtiment</small></div><button aria-label="Plus d'options">•••</button>
-        </div>
+        <p class="local-note">Mode local : dossiers et constats sont enregistrés sur cet appareil uniquement. Pensez aux sauvegardes.</p>
       </div>
     </aside>
 
@@ -31,53 +27,46 @@
       <header class="topbar">
         <button class="mobile-menu" aria-label="Ouvrir le menu">☰</button>
         <div class="breadcrumb"><span>Espace de travail</span><b>/</b><strong>Vue d'ensemble</strong></div>
-        <div class="top-actions"><button class="round" aria-label="Rechercher">⌕</button><button class="round" aria-label="Notifications">♢<i></i></button><button class="primary new-inspection">＋ Nouveau constat</button></div>
+        <div class="top-actions"><button class="primary new-inspection">＋ Nouveau constat</button></div>
       </header>
 
       <section class="page active" id="dashboard">
         <div class="hero-row">
-          <div><p class="eyebrow">MARDI 22 SEPTEMBRE</p><h1>Bonjour Jean <span>👋</span></h1><p>Voici un aperçu de vos expertises en cours.</p></div>
+          <div><p class="eyebrow" id="today-label"></p><h1>Bonjour</h1><p>Voici un aperçu de vos dossiers et constats enregistrés sur cet appareil.</p></div>
           <button class="primary new-inspection">＋ Nouveau constat</button>
         </div>
 
         <div class="stats-grid">
-          <article class="stat-card"><div class="stat-icon green">▱</div><div><p>Dossiers actifs</p><strong>12</strong><small><em>+2</em> ce mois-ci</small></div><button>→</button></article>
-          <article class="stat-card"><div class="stat-icon amber">◷</div><div><p>Constats à finaliser</p><strong>4</strong><small>dont 2 cette semaine</small></div><button>→</button></article>
-          <article class="stat-card"><div class="stat-icon blue">✓</div><div><p>Rapports générés</p><strong>38</strong><small><em>+8</em> ce mois-ci</small></div><button>→</button></article>
+          <article class="stat-card"><div class="stat-icon green">▱</div><div><p>Dossiers en cours</p><strong id="stat-dossiers">0</strong><small id="stat-dossiers-note"></small></div><button data-go="dossiers" aria-label="Voir les dossiers">→</button></article>
+          <article class="stat-card"><div class="stat-icon amber">◷</div><div><p>Constats enregistrés</p><strong id="stat-drafts">0</strong><small id="stat-drafts-note"></small></div><button data-go="constats" aria-label="Voir les brouillons">→</button></article>
+          <article class="stat-card"><div class="stat-icon blue">✓</div><div><p>Actions à suivre</p><strong id="stat-actions">0</strong><small id="stat-actions-note"></small></div><button data-go="constats" aria-label="Voir les brouillons">→</button></article>
         </div>
 
         <div class="dashboard-grid">
           <section class="panel recent-panel">
-            <div class="panel-title"><div><h2>Dossiers récents</h2><p>Vos dernières missions mises à jour</p></div><button class="link-btn" data-view="dossiers">Voir tous <span>→</span></button></div>
-            <div class="table-wrap"><table><thead><tr><th>DOSSIER</th><th>TYPE</th><th>CLIENT</th><th>DERNIÈRE ACTIVITÉ</th><th>STATUT</th><th></th></tr></thead><tbody>
-              <tr><td><span class="folder-icon">▰</span><div><b>Résidence Les Ormes</b><small>#EX-2026-042</small></div></td><td>Expertise judiciaire</td><td>Tribunal judiciaire de Lyon</td><td>Aujourd'hui, 09:42</td><td><span class="status progress">En cours</span></td><td>›</td></tr>
-              <tr><td><span class="folder-icon">▰</span><div><b>Maison Dubois</b><small>#EX-2026-038</small></div></td><td>Expertise bâtiment</td><td>M. &amp; Mme Dubois</td><td>Hier, 17:20</td><td><span class="status wait">En attente</span></td><td>›</td></tr>
-              <tr><td><span class="folder-icon">▰</span><div><b>Entrepôt Logisud</b><small>#EX-2026-031</small></div></td><td>Expertise bâtiment</td><td>Logisud SAS</td><td>18 sept. 2026</td><td><span class="status progress">En cours</span></td><td>›</td></tr>
-              <tr><td><span class="folder-icon">▰</span><div><b>Immeuble République</b><small>#EX-2026-019</small></div></td><td>Expertise judiciaire</td><td>Cour d'appel de Grenoble</td><td>12 sept. 2026</td><td><span class="status done">Terminé</span></td><td>›</td></tr>
-            </tbody></table></div>
+            <div class="panel-title"><div><h2>Dossiers récents</h2><p>Vos derniers dossiers mis à jour</p></div><button class="link-btn" data-view="dossiers">Voir tous <span>→</span></button></div>
+            <div class="table-wrap"><table><thead><tr><th>DOSSIER</th><th>TYPE</th><th>CLIENT</th><th>DERNIÈRE ACTIVITÉ</th><th>STATUT</th></tr></thead><tbody id="recent-dossiers"></tbody></table></div>
           </section>
 
           <aside class="panel agenda">
-            <div class="panel-title"><div><h2>À venir</h2><p>Vos prochains rendez-vous</p></div><button class="round">•••</button></div>
-            <div class="appointment"><div class="date"><b>24</b><small>SEP.</small></div><div><span class="time">09:30</span><h3>Résidence Les Ormes</h3><p>Réunion d'expertise contradictoire</p><small>⌖ 14 rue des Tilleuls, Lyon 3e</small></div></div>
-            <div class="appointment"><div class="date"><b>28</b><small>SEP.</small></div><div><span class="time">14:00</span><h3>Maison Dubois</h3><p>Visite de contrôle — fissures</p><small>⌖ 8 chemin du Moulin, Écully</small></div></div>
-            <button class="calendar-btn">Voir le calendrier <span>→</span></button>
+            <div class="panel-title"><div><h2>Échéances</h2><p>Suites à donner datées, issues de vos constats</p></div></div>
+            <div id="upcoming-actions"></div>
           </aside>
         </div>
 
-        <section class="continue-card">
-          <div class="continue-icon">◎</div><div><span class="status draft">BROUILLON</span><h2>Reprendre votre dernier constat</h2><p><b>Résidence Les Ormes</b> · 8 désordres renseignés · Modifié il y a 2 h</p></div><button class="secondary resume">Continuer le constat <span>→</span></button>
+        <section class="continue-card" id="continue-card" hidden>
+          <div class="continue-icon">◎</div><div><span class="status draft">BROUILLON</span><h2>Reprendre le constat actuel</h2><p></p></div><button class="secondary resume">Continuer le constat <span>→</span></button>
         </section>
       </section>
 
-      <section class="page" id="dossiers"><div class="simple-head"><div><p class="eyebrow">ESPACE DE TRAVAIL</p><h1>Mes dossiers</h1><p>Centralisez toutes vos missions et leurs documents.</p></div><button class="primary">＋ Nouveau dossier</button></div><div class="empty-panel"><div>▱</div><h2>Vos dossiers apparaîtront ici</h2><p>Cette vue détaillée sera reliée à OneDrive et Airtable dans une prochaine étape.</p></div></section>
+      <section class="page" id="dossiers"><div class="simple-head"><div><p class="eyebrow">ESPACE DE TRAVAIL</p><h1>Mes dossiers</h1><p>Regroupez vos constats par dossier ou mission. Enregistrés sur cet appareil.</p></div><button class="primary" id="new-dossier">＋ Nouveau dossier</button></div><div id="dossier-list" class="dossier-list"></div></section>
       <section class="page" id="constats"><div class="simple-head"><div><p class="eyebrow">REPRENDRE UNE VISITE</p><h1>Mes brouillons</h1><p>Vos constats enregistrés sur cet appareil. Rouvrez-les pour les corriger ou ajouter des photos.</p></div><button class="primary new-inspection">＋ Nouveau constat</button></div><div id="draft-list" class="draft-list"></div></section>
-      <section class="page" id="rapports"><div class="simple-head"><div><p class="eyebrow">DOCUMENTS</p><h1>Rapports</h1><p>Générez et exportez les annexes de vos expertises.</p></div></div><div class="empty-panel"><div>≡</div><h2>38 rapports générés</h2><p>Les exports PDF conservent uniquement les rubriques renseignées.</p></div></section>
+      <section class="page" id="rapports"><div class="simple-head"><div><p class="eyebrow">DOCUMENTS</p><h1>Rapports</h1><p>Générez et exportez les annexes de vos expertises.</p></div></div><div class="empty-panel"><div>≡</div><h2>Rapports PDF et Word</h2><p>Les rapports se génèrent depuis la synthèse d’un constat (étape 4). Les exports conservent uniquement les rubriques cochées. L’historique des rapports envoyés sera disponible avec la synchronisation serveur.</p></div></section>
 
       <section class="page inspection-page" id="inspection">
         <div class="inspection-head"><button class="back-btn">←</button><div><p class="eyebrow">NOUVEAU CONSTAT</p><h1>Constat de terrain</h1></div><button class="secondary" id="save-draft">Enregistrer le brouillon</button><span class="save-state" role="status" aria-live="polite">Brouillon local prêt</span></div>
         <section class="access-panel" aria-label="Accès de terrain"><strong>Préparer la visite</strong><p id="access-status" role="status">Caméra, microphone et localisation seront proposés au démarrage du constat.</p><div><button class="secondary" id="prepare-access">Préparer / réessayer les accès</button><button class="secondary" id="pause-access">Suspendre les accès</button></div><small>Le navigateur peut afficher plusieurs demandes initiales. Les appareils restent en pause hors capture.</small></section><div class="stepper"><div class="step active"><span>1</span><b>Dossier</b></div><i></i><div class="step"><span>2</span><b>Collecte terrain</b></div><i></i><div class="step"><span>3</span><b>Actions</b></div><i></i><div class="step"><span>4</span><b>Synthèse</b></div></div>
-        <div class="form-card step-content active" data-step="1"><span class="form-number">01</span><h2>À quel dossier rattacher ce constat ?</h2><p>Renseignez votre dossier et la date de visite. Vous pourrez compléter ce constat ultérieurement.</p><div class="case-details"><label>Nom du dossier<input id="case-name" maxlength="200" placeholder="Nom de votre dossier"></label><label>Référence<input id="case-reference" maxlength="100" placeholder="Votre référence"></label><label>Date du constat<input id="visit-date" type="date"></label></div><label class="field-label">EXEMPLES DE DOSSIERS (facultatif)</label><div class="case-options"><button class="case-option selected"><span class="folder-icon">▰</span><div><b>Résidence Les Ormes</b><small>#EX-2026-042 · Expertise judiciaire</small></div><span>✓</span></button><button class="case-option"><span class="folder-icon">▰</span><div><b>Maison Dubois</b><small>#EX-2026-038 · Expertise bâtiment</small></div><span></span></button><button class="case-option"><span class="folder-icon">▰</span><div><b>Entrepôt Logisud</b><small>#EX-2026-031 · Expertise bâtiment</small></div><span></span></button></div><div class="form-actions"><button class="secondary back-btn">Annuler</button><button class="primary next-step">Continuer <span>→</span></button></div></div>
+        <div class="form-card step-content active" data-step="1"><span class="form-number">01</span><h2>À quel dossier rattacher ce constat ?</h2><p>Renseignez votre dossier et la date de visite. Vous pourrez compléter ce constat ultérieurement.</p><div class="case-details"><label>Nom du dossier<input id="case-name" maxlength="200" placeholder="Nom de votre dossier"></label><label>Référence<input id="case-reference" maxlength="100" placeholder="Votre référence"></label><label>Date du constat<input id="visit-date" type="date"></label></div><label class="field-label" for="case-dossier">RATTACHER À UN DOSSIER</label><div class="dossier-picker"><select id="case-dossier"><option value="">— Aucun dossier —</option></select><button class="secondary" type="button" id="picker-new-dossier">＋ Créer un dossier</button></div><div class="form-actions"><button class="secondary back-btn">Annuler</button><button class="primary next-step">Continuer <span>→</span></button></div></div>
         <div class="form-card step-content field-capture" data-step="2"><span class="form-number">02</span><h2>Collecte sur le terrain</h2><p>Prenez vos photos dans l'ordre de la visite. Vous pourrez revenir à tout moment sur un sujet existant.</p>
           <form id="subject-form" class="subject-editor"><label for="subject-name">Nommer le désordre ou le lieu</label><div><input id="subject-name" required maxlength="160" placeholder="Ex. Fissure façade nord, cuisine, toiture…"><button class="primary" type="submit">Ajouter et sélectionner</button></div><small>Créez un sujet avant de prendre les photos, ou changez leur rattachement ensuite.</small></form>
           <div class="capture-toolbar"><button class="capture-main" id="photo-button">◉<strong>Ouvrir l’appareil photo</strong><small>Caméra de cet ordinateur, de la tablette ou du téléphone</small></button><button class="capture-side" id="import-photo">＋<strong>Importer des photos</strong></button></div><input id="photo-input" type="file" accept="image/*" multiple hidden><input id="native-camera" type="file" accept="image/*" capture="environment" hidden>
@@ -92,9 +81,15 @@
   </div>
   <section class="backup-tools"><button id="backup-visit" class="secondary">Sauvegarder la visite dans un fichier</button><button id="restore-visit" class="secondary">Ouvrir une sauvegarde</button><input id="backup-input" type="file" accept="application/json,.json" hidden><small>Conservez une copie avec les photos, les notes et les audios.</small></section>
   <div class="toast" role="status">✓ Rapport prêt à être enregistré en PDF</div>
+  <dialog id="dossier-dialog"><form id="dossier-form" method="dialog"><div class="dialog-head"><b id="dossier-dialog-title">Nouveau dossier</b><button type="button" id="close-dossier" aria-label="Fermer">×</button></div>
+    <div class="dossier-fields"><label>Nom du dossier *<input name="name" required maxlength="200" placeholder="Ex. Résidence …, Maison …"></label><label>Référence<input name="reference" maxlength="100" placeholder="N° RG, référence interne…"></label>
+    <label>Type de mission<select name="type"><option>Expertise judiciaire</option><option>Expertise amiable</option><option>Conseil / AMO</option><option>Diagnostic</option><option>Suivi de chantier</option><option>Autre</option></select></label>
+    <label>Client / juridiction<input name="client" maxlength="200"></label><label class="wide">Adresse du site<input name="address" maxlength="300"></label>
+    <label>Statut<select name="status"><option>En cours</option><option>En attente</option><option>Clos</option></select></label></div>
+    <div class="form-actions dossier-actions"><button type="button" class="secondary" id="cancel-dossier">Annuler</button><button class="primary" type="submit">Enregistrer le dossier</button></div></form></dialog>
   <dialog id="drawing-dialog"><div class="dialog-head"><div><b>Note manuscrite</b><small>Écrivez avec votre stylet ou votre doigt</small></div><button id="close-drawing">×</button></div><canvas id="drawing-canvas"></canvas><div class="drawing-tools"><label>Couleur <input type="color" id="pen-color" value="#d94738"></label><label>Épaisseur <input type="range" id="pen-width" min="2" max="14" value="4"></label><button class="secondary" id="drawing-pen" aria-pressed="true">Stylo</button><button class="secondary" id="drawing-eraser" aria-pressed="false">Gomme</button><button class="secondary" id="clear-drawing">Effacer</button><button class="primary" id="save-drawing">Enregistrer la note</button></div></dialog>
   <dialog id="camera-dialog"><div class="dialog-head"><b>Prendre une photo</b><button id="close-camera" aria-label="Fermer la caméra">×</button></div><video id="camera-video" autoplay playsinline muted></video><p id="camera-status" role="status"></p><div class="drawing-tools"><button id="native-camera-button" class="secondary">Utiliser l’appareil photo du téléphone</button><button id="take-photo" class="primary" disabled>Prendre la photo</button></div></dialog>
   <dialog id="audio-dialog"><div class="dialog-head"><b>Note vocale</b><button id="close-audio" aria-label="Fermer">×</button></div><div class="audio-options"><p>L’audio sera conservé et pourra être réécouté dans la collecte et la synthèse.</p><label class="check-label"><input type="checkbox" id="transcribe-audio" checked> Transcrire pendant la dictée</label><p id="speech-help">Selon le navigateur, la reconnaissance vocale utilise un service en ligne du fournisseur du navigateur. Relisez toujours la transcription.</p><button id="start-audio" class="primary">Démarrer l’enregistrement</button></div></dialog>
-  <script src="vendor/pdf-lib.min.js"></script><script src="pdf-report.js"></script><script src="vendor/docx.js"></script><script src="word-report.js"></script><script src="field-app.js"></script><script src="drawing.js"></script><script src="visit-access.js"></script><script src="drafts.js"></script><script src="export-actions.js"></script>
+  <script src="vendor/pdf-lib.min.js"></script><script src="pdf-report.js"></script><script src="vendor/docx.js"></script><script src="word-report.js"></script><script src="field-app.js"></script><script src="drawing.js"></script><script src="visit-access.js"></script><script src="dossiers.js"></script><script src="drafts.js"></script><script src="export-actions.js"></script>
 <p id="offline-status" class="offline-status" role="status"></p><script src="offline.js"></script></body>
 </html>
