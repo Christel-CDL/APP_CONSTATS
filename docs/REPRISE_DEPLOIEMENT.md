@@ -12,7 +12,9 @@ Les fichiers de l'application sont placés à la racine de ce dépôt : ouvrir `
 - HTTPS nécessaire aux accès caméra, microphone et géolocalisation sur les appareils mobiles.
 - `server.cjs` et `OUVRIR_CONSTAT.cmd` servent uniquement au lancement local, pas à la production.
 - L'application Suivi PENA existe déjà chez Hostinger : utiliser un sous-domaine ou un dossier dédié pour Constat et préserver le site existant. Le service worker doit rester dans le dossier de Constat, avec sa portée relative `./` ; ne pas l'installer à la racine de Suivi PENA.
-- Aucun déploiement Hostinger n'a été effectué lors de cette publication GitHub.
+- Premier essai du 25 septembre en échec : l'image `ghcr.io/christel-cdl/app-constats` est construite par GitHub Actions mais le paquet GHCR est **privé**, donc le VPS ne peut pas la télécharger. L'image ne contient ni donnée ni secret : la passer en visibilité publique (GitHub → Packages → app-constats → Package settings → Change visibility), comme pour Suivi PENA.
+- Déploiement : projet Docker Compose séparé **`app-constats`** ([`deploy/docker-compose.constats.yml`](../deploy/docker-compose.constats.yml)), branché sur le réseau `root_default` pour être servi par le Traefik du projet `root`. Ne jamais coller ce service dans le compose `root` et ne jamais nommer un projet `root` : un projet de même nom remplace l'existant.
+- Hostinger sait seulement télécharger une image (`image:`), pas construire (`build:`). Attendre la coche verte de GitHub Actions avant de cliquer sur Déployer.
 
 ## État fonctionnel et limites
 

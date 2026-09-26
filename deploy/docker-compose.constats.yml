@@ -1,0 +1,26 @@
+# Projet Docker Compose « app-constats » du VPS Hostinger (VM 1102696).
+# Projet SÉPARÉ du projet « root » (Traefik + n8n + Suivi PENA) : le déployer
+# ou le supprimer ne touche jamais Suivi PENA. Il se branche sur le réseau
+# du projet root pour que Traefik (HTTPS Let's Encrypt) le serve.
+#
+# hPanel → VPS → Docker Manager → « Composer » un nouveau projet nommé
+# app-constats, coller ce fichier, Déployer. Ne pas le coller dans « root ».
+# Prérequis : paquet GHCR app-constats en visibilité publique (sinon « pull access denied »).
+services:
+  constats-app:
+    image: ghcr.io/christel-cdl/app-constats:latest
+    restart: always
+    networks:
+      - root_default
+    labels:
+      - "traefik.enable=true"
+      - "traefik.docker.network=root_default"
+      - "traefik.http.routers.constats-app.rule=Host(`constats.srv1102696.hstgr.cloud`)"
+      - "traefik.http.routers.constats-app.entrypoints=web,websecure"
+      - "traefik.http.routers.constats-app.tls=true"
+      - "traefik.http.routers.constats-app.tls.certresolver=mytlschallenge"
+      - "traefik.http.services.constats-app.loadbalancer.server.port=80"
+
+networks:
+  root_default:
+    external: true

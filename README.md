@@ -15,7 +15,8 @@ Ouvrir http://127.0.0.1:8765/ dans le navigateur. Sous Windows, `OUVRIR_CONSTAT.
 
 Application statique, sans compilation. `index.html` se trouve à la racine du dépôt et utilise les fichiers JavaScript/CSS voisins ainsi que `vendor/`.
 
-La mise en ligne sur Hostinger est confiée à Claude. Voir [les consignes de reprise et les limites connues](docs/REPRISE_DEPLOIEMENT.md), notamment pour préserver l'application Suivi PENA existante.
+Hébergement : VPS Hostinger (VM 1102696, Europe), à l'adresse prévue https://constats.srv1102696.hstgr.cloud.
+Push sur `main` → GitHub Actions publie l'image `ghcr.io/christel-cdl/app-constats:latest` (paquet à mettre en visibilité **publique**) → hPanel déploie le projet Docker **`app-constats`** décrit dans [`deploy/docker-compose.constats.yml`](deploy/docker-compose.constats.yml). Ce projet est distinct du projet `root` (Traefik, n8n, Suivi PENA), qu'il ne modifie pas. Voir [les consignes de reprise](docs/REPRISE_DEPLOIEMENT.md).
 
 ## Utilisation
 
