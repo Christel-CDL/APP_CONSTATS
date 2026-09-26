@@ -14,6 +14,7 @@ Exécuter dans cet ordre :
 node tests/browser.cjs
 node tests/reports.cjs
 node tests/edge-cases.cjs
+node tests/dossiers.cjs
 ```
 
 `TEST_OUTPUT` permet de choisir le dossier des résultats. Chaque test navigateur ouvre un profil isolé et le mode `?verification=1`, avec une base IndexedDB distincte. Aucun brouillon utilisateur n'est utilisé. Les flux caméra/audio et la position sont simulés ; le stockage, les pistes médias, les enregistrements et les exports utilisent les API réelles du navigateur.
