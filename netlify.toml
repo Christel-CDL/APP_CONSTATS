@@ -1,0 +1,23 @@
+# Hébergement Netlify de Constat (site statique, sans dépendance npm).
+[build]
+  command = "sh scripts/build-netlify.sh"
+  publish = "dist"
+
+# En-têtes communs : HTTPS strict et accès matériels limités au site lui-même
+# (caméra, micro et géolocalisation sont indispensables aux constats).
+[[headers]]
+  for = "/*"
+  [headers.values]
+    Strict-Transport-Security = "max-age=31536000"
+    X-Content-Type-Options = "nosniff"
+    X-Frame-Options = "DENY"
+    Referrer-Policy = "strict-origin-when-cross-origin"
+    Permissions-Policy = "camera=(self), microphone=(self), geolocation=(self)"
+    X-Robots-Tag = "noindex, nofollow"
+
+# Netlify revalide déjà HTML/JS/CSS à chaque visite (max-age=0).
+# Le service worker doit toujours être revalidé pour diffuser les nouvelles versions.
+[[headers]]
+  for = "/sw.js"
+  [headers.values]
+    Cache-Control = "no-cache, no-store, must-revalidate"
