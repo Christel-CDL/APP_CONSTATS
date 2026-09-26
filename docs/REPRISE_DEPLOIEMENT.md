@@ -11,16 +11,8 @@ Les fichiers de l'application sont placés à la racine de ce dépôt : ouvrir `
 - Publier `index.html`, les fichiers JavaScript et CSS référencés, `sw.js` et le dossier `vendor/` en conservant leurs chemins relatifs. Les bibliothèques PDF et DOCX sont embarquées avec leurs licences.
 - HTTPS nécessaire aux accès caméra, microphone et géolocalisation sur les appareils mobiles.
 - `server.cjs` et `OUVRIR_CONSTAT.cmd` servent uniquement au lancement local, pas à la production.
-- Hébergement retenu le 26 septembre 2026 : Netlify (offre gratuite), à la place du VPS Hostinger. Le pipeline Docker/nginx/GHCR prévu pour le VPS a été retiré du dépôt.
-- Constat n'est plus déployé sur le VPS Hostinger, qui reste dédié à Suivi PENA. Le service worker garde sa portée relative `./`.
-
-## Paramétrage Netlify
-
-- `netlify.toml` : commande `sh scripts/build-netlify.sh`, dossier publié `dist`. Laisser vides les champs « Build command » et « Publish directory » de l'interface : le fichier du dépôt fait foi.
-- Branche de production : `main`. Chaque pull request obtient un aperçu de déploiement distinct (adresse différente, donc brouillons distincts).
-- En-têtes : HTTPS strict, `Permissions-Policy` limitant caméra, micro et géolocalisation au site, `noindex` pour les moteurs de recherche, `sw.js` jamais mis en cache.
-- HTTPS est fourni automatiquement par Netlify (adresse `*.netlify.app` ou domaine personnalisé).
-- Le site est public pour toute personne connaissant l'adresse. Les données restent dans le navigateur de l'appareil ; aucune n'est transmise à Netlify. La protection par mot de passe de Netlify n'est pas incluse dans l'offre gratuite.
+- L'application Suivi PENA existe déjà chez Hostinger : utiliser un sous-domaine ou un dossier dédié pour Constat et préserver le site existant. Le service worker doit rester dans le dossier de Constat, avec sa portée relative `./` ; ne pas l'installer à la racine de Suivi PENA.
+- Aucun déploiement Hostinger n'a été effectué lors de cette publication GitHub.
 
 ## État fonctionnel et limites
 

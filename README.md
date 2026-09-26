@@ -15,7 +15,7 @@ Ouvrir http://127.0.0.1:8765/ dans le navigateur. Sous Windows, `OUVRIR_CONSTAT.
 
 Application statique, sans compilation. `index.html` se trouve à la racine du dépôt et utilise les fichiers JavaScript/CSS voisins ainsi que `vendor/`.
 
-Hébergement : **Netlify** (offre gratuite), relié au dépôt GitHub. Chaque fusion sur `main` redéploie le site. `netlify.toml` exécute `scripts/build-netlify.sh`, qui copie dans `dist/` uniquement les fichiers servis en production (`server.cjs`, `docs/` et `tests/` ne sont pas publiés). Voir [les consignes de reprise et les limites connues](docs/REPRISE_DEPLOIEMENT.md).
+La mise en ligne sur Hostinger est confiée à Claude. Voir [les consignes de reprise et les limites connues](docs/REPRISE_DEPLOIEMENT.md), notamment pour préserver l'application Suivi PENA existante.
 
 ## Utilisation
 
