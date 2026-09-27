@@ -13,7 +13,7 @@ async function downloadPdf(clean){
   const buttons=[$('#export-pdf'),$('#export-clean-pdf')];buttons.forEach(b=>b.disabled=true);
   try{updateReportContent();const photos=structuredClone(state.photos);for(const photo of photos){photo.pdfSrc=await compressPhoto(photo.annotatedSrc||photo.src);}
     const bytes=await buildConstatPdf({photos,subjects:[...state.subjects],actions:collectActions(),heading:$('.report-top small').textContent+' · '+$('#report-date').textContent,clean});
-    download(new Blob([bytes],{type:'application/pdf'}),clean?'constat-photos-seules.pdf':'constat-rapport-commente.pdf');
+    download(new Blob([bytes],{type:'application/pdf'}),exportBaseName()+(clean?'_photos-seules.pdf':'_rapport-commente.pdf'));
     $('.toast').textContent='PDF téléchargé. Vous pouvez le joindre à votre e-mail.';$('.toast').classList.add('show');setTimeout(()=>$('.toast').classList.remove('show'),4000);
   }catch(error){console.error(error);alert('Le PDF n’a pas pu être créé. Vérifiez les photos puis réessayez.');}finally{buttons.forEach(b=>b.disabled=false);}
 }

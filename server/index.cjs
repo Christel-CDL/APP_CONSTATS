@@ -17,7 +17,8 @@ const config={
   devLogCodes:env.DEV_LOG_CODES==='1',
   // Tests uniquement : comptes fournis en JSON au lieu d'Airtable.
   devUsers:env.DEV_USERS?JSON.parse(env.DEV_USERS):null,
-  projectsTable:env.AIRTABLE_PROJECTS_TABLE||'Projets'
+  projectsTable:env.AIRTABLE_PROJECTS_TABLE||'Projets',
+  constatsTable:env.AIRTABLE_CONSTATS_TABLE||'Constats'
 };
 // Diagnostic de démarrage : présence et longueur de chaque réglage, jamais leur valeur.
 {const report=['APP_URL','SESSION_SECRET','AIRTABLE_TOKEN','AIRTABLE_BASE_ID','SMTP_HOST','SMTP_PORT','SMTP_USER','SMTP_PASS','MAIL_FROM'].map(name=>{const value=String(env[name]||'').trim();return `  ${name} : ${value?`reçu (${value.length} caractères)`:'ABSENT'}`;});
@@ -102,6 +103,27 @@ async function saveProject(user,body,airtableId){
   const record=airtableId?await airtable('/'+encodeURIComponent(airtableId),{method:'PATCH',body:JSON.stringify({fields})},config.projectsTable)
     :await airtable('',{method:'POST',body:JSON.stringify({fields})},config.projectsTable);
   return projectFrom(record);}
+// ── Constats (table Constats) : fiche de suivi, jamais le contenu ─────────────
+// Titre, date, statut, dossier, auteur et nom du dernier fichier exporté. Photos, commentaires et rapports restent sur
+// l'appareil. Rattaché à une expertise judiciaire : ni lieu ni nom de dossier (seule la référence OPALEXE figure au titre).
+const CONSTAT_STATUS=new Set(['Brouillon','Finalisé','Rapport envoyé']);
+const devConstats=[];// tests uniquement
+async function saveConstat(user,body){const text=(v,max)=>String(v??'').replace(/[\u0000-\u001f]+/g,' ').trim().slice(0,max);
+  const draftId=String(body.draftId||'');if(!/^[\w-]{6,60}$/.test(draftId))throw Object.assign(new Error('id'),{status:400});
+  let projet=String(body.projet||''),ej=body.kind==='ej';
+  if(projet){if(!/^rec\w{14}$|^dev-p\d+$/.test(projet)||!(await userProjectIds(user.id)).includes(projet))projet='';
+    else if(config.devUsers)ej=ej||selectName(devProjects.find(p=>p.id===projet)?.fields?.Type)==='Expertise judiciaire';
+    else ej=ej||selectName((await airtable('/'+encodeURIComponent(projet),{},config.projectsTable)).fields?.Type)==='Expertise judiciaire';}
+  const fields={Titre:text(body.title,200)||'Constat','Date de visite':/^\d{4}-\d{2}-\d{2}$/.test(body.date||'')?body.date:null,Statut:CONSTAT_STATUS.has(body.status)?body.status:'Brouillon',
+    'Lieu visité':ej?'':text(body.place,300),'Synthèse':text(body.summary,500),'Identifiant appli':draftId};
+  if(projet)fields.Projet=[projet];
+  if(config.devUsers){let c=devConstats.find(x=>x.fields['Identifiant appli']===draftId&&x.owner===user.id);if(!c){c={id:'dev-c'+(devConstats.length+1),owner:user.id,fields:{Auteur:[user.id]}};devConstats.push(c);}Object.assign(c.fields,fields);return {id:c.id,status:c.fields.Statut};}
+  const found=await airtable(`?maxRecords=1&filterByFormula=${encodeURIComponent(`{Identifiant appli}='${draftId}'`)}`,{},config.constatsTable);
+  const existing=found.records?.[0];
+  if(existing&&!(existing.fields?.Auteur||[]).includes(user.id))throw Object.assign(new Error('owner'),{status:404});
+  const record=existing?await airtable('/'+encodeURIComponent(existing.id),{method:'PATCH',body:JSON.stringify({fields})},config.constatsTable)
+    :await airtable('',{method:'POST',body:JSON.stringify({fields:{...fields,Auteur:[user.id]}})},config.constatsTable);
+  return {id:record.id,status:selectName(record.fields?.Statut)};}
 async function sessionUser(req,id){if(!sessionTokens(req).some(t=>readToken(t).id===id))return null;const user=await findUserById(id).catch(()=>null);return user&&ALLOWED_STATUS.has(user.status)?user:null;}
 const publicProfile=user=>({id:user.id,name:user.name,email:user.email,organisation:user.organisation,role:user.role,types:ROLE_TYPES[user.role]||['autre']});
 
@@ -145,6 +167,11 @@ async function api(req,res,pathname){
     }catch(error){if(error.status)return send(res,error.status,{message:error.status===403?'Type de mission non autorisé pour ce profil.':'Dossier introuvable ou invalide.'});
       console.error('Dossiers Airtable :',error.message);return send(res,503,{message:'Airtable indisponible : dossier conservé sur l’appareil.'});}
     return send(res,405,{message:'Méthode non autorisée.'});
+  }
+  if(pathname==='/api/constats'&&req.method==='POST'){
+    const body=await readJson(req),user=await sessionUser(req,String(body.profil||''));if(!user)return send(res,401,{message:'Profil non connecté.'});
+    try{return send(res,200,{constat:await saveConstat(user,body)});}
+    catch(error){if(error.status)return send(res,error.status,{message:'Constat invalide.'});console.error('Constats Airtable :',error.message);return send(res,503,{message:'Airtable indisponible : fiche envoyée plus tard.'});}
   }
   if(pathname==='/api/me'&&req.method==='GET'){
     const profiles=[],kept=[];
