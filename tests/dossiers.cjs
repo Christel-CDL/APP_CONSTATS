@@ -1,10 +1,12 @@
 // Dossiers locaux et tableau de bord sans données fictives. Même prérequis que browser.cjs.
 const {chromium}=require('playwright');
 const assert=require('node:assert/strict');
+// Explorateur de fichiers (showSaveFilePicker) non pilotable par Playwright : ces tests vérifient le téléchargement classique.
+async function noSavePicker(browser,options){const context=await browser.newContext(options);await context.addInitScript(()=>{delete window.showSaveFilePicker;});return context;}
 (async()=>{
   const browser=await chromium.launch({channel:process.env.PLAYWRIGHT_CHANNEL||'msedge',headless:true});
   try{
-    const context=await browser.newContext({viewport:{width:1280,height:900}});
+    const context=await noSavePicker(browser,{viewport:{width:1280,height:900}});
     const page=await context.newPage(),errors=[];
     page.on('pageerror',e=>errors.push(e.message));page.on('dialog',d=>d.accept());
     await page.addInitScript(()=>{navigator.mediaDevices.getUserMedia=async()=>{throw new DOMException('refusé','NotAllowedError');};navigator.geolocation.watchPosition=()=>0;navigator.geolocation.getCurrentPosition=(ok,fail)=>fail({code:1});});

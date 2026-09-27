@@ -1,6 +1,6 @@
 'use strict';
 const PREFIX='constat-shell-'+self.registration.scope;
-const CACHE=PREFIX+'v20260929-1';
+const CACHE=PREFIX+'v20260930-1';
 const ASSETS=['./','index.html','demarrer.html','launcher.js','launcher.css','manifest.webmanifest','icons/icon-192.png','icons/icon-512.png','icons/apple-touch-icon.png','profile.js','legacy-import.js','styles.css','refinements.css','field-app.js','report-logo.js','html-report.js','cdl-report.js','pv-report.js','pv-editor.js','signature.js','drawing.js','drafts.js','dossiers.js','visit-access.js','pdf-report.js','word-report.js','export-actions.js','constats-sync.js','offline.js','vendor/pdf-lib.min.js','vendor/docx.js'];
 const urls=ASSETS.map(path=>new URL(path,self.registration.scope).href);
 // Une réponse obtenue après redirection (la racine renvoie vers l'écran de lancement) est recopiée sans son

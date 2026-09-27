@@ -2,10 +2,12 @@
 const {chromium}=require('playwright');
 const assert=require('node:assert/strict'),fs=require('node:fs');
 const png='data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==';
+// Explorateur de fichiers (showSaveFilePicker) non pilotable par Playwright : ces tests vérifient le téléchargement classique.
+async function noSavePicker(browser,options){const context=await browser.newContext(options);await context.addInitScript(()=>{delete window.showSaveFilePicker;});return context;}
 (async()=>{
   const browser=await chromium.launch({channel:process.env.PLAYWRIGHT_CHANNEL||'msedge',headless:true});
   try{
-    const page=await (await browser.newContext({viewport:{width:1280,height:900},acceptDownloads:true})).newPage(),errors=[];
+    const page=await (await noSavePicker(browser,{viewport:{width:1280,height:900},acceptDownloads:true})).newPage(),errors=[];
     page.on('pageerror',e=>errors.push(e.message));const dialogs=[];page.on('dialog',d=>{dialogs.push(d.message());d.accept();});
     const draw=async()=>{const box=await page.locator('#signature-canvas').boundingBox();await page.mouse.move(box.x+30,box.y+40);await page.mouse.down();await page.mouse.move(box.x+120,box.y+90,{steps:8});await page.mouse.move(box.x+220,box.y+30,{steps:8});await page.mouse.up();await page.locator('#save-signature').click();};
     await page.addInitScript(()=>{navigator.mediaDevices.getUserMedia=async()=>{throw new DOMException('refusé','NotAllowedError');};navigator.geolocation.watchPosition=()=>0;navigator.geolocation.getCurrentPosition=(ok,fail)=>fail({code:1});});

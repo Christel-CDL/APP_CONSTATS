@@ -24,6 +24,8 @@ services:
       SMTP_USER: ${SMTP_USER}
       SMTP_PASS: ${SMTP_PASS}
       MAIL_FROM: ${MAIL_FROM}                  # ex. "Constats CDL EXPERT <connexion@expertform.fr>"
+    volumes:
+      - constats-data:/data                    # constats et photos sauvegardés : NE PAS supprimer ce volume
     networks:
       - root_default
     labels:
@@ -35,6 +37,9 @@ services:
       - "traefik.http.routers.constats-app.tls=true"
       - "traefik.http.routers.constats-app.tls.certresolver=mytlschallenge"
       - "traefik.http.services.constats-app.loadbalancer.server.port=8080"
+
+volumes:
+  constats-data:
 
 networks:
   root_default:
