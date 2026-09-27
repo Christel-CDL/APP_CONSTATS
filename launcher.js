@@ -62,6 +62,10 @@ async function start(preferred){
 })();
 // Installation de l'icône
 const standalone=matchMedia('(display-mode: standalone)').matches||navigator.standalone===true;
-if(!standalone){const ios=/iPad|iPhone|iPod/.test(navigator.userAgent)||(navigator.platform==='MacIntel'&&navigator.maxTouchPoints>1);$('#install').hidden=false;$('#install-ios').hidden=!ios;$('#install-android').hidden=ios;}
+if(!standalone){const ios=/iPad|iPhone|iPod/.test(navigator.userAgent)||(navigator.platform==='MacIntel'&&navigator.maxTouchPoints>1);$('#install').hidden=false;$('#install-ios').hidden=!ios;$('#install-android').hidden=ios;
+  if(ios){const ua=navigator.userAgent,other=/CriOS|FxiOS|EdgiOS/.test(ua),phone=/iPhone|iPod/.test(ua);
+    // Safari iPhone : barre d'outils en bas ; Safari iPad et Chrome/Firefox/Edge : bouton dans la barre d'adresse, en haut.
+    $('#install-ios-where').textContent=phone&&!other?'en bas de l’écran, au centre':'en haut à droite, dans ou à côté de la barre d’adresse';
+    $('#install-ios-other').hidden=!other;}}
 window.addEventListener('beforeinstallprompt',e=>{e.preventDefault();deferredInstall=e;$('#install-button').hidden=false;});
 $('#install-button').addEventListener('click',async()=>{if(!deferredInstall)return;deferredInstall.prompt();await deferredInstall.userChoice;deferredInstall=null;$('#install-button').hidden=true;});

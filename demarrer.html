@@ -28,7 +28,12 @@
     </section>
     <section id="install" class="install" hidden>
       <h2>Installer l’icône sur cet appareil</h2>
-      <p id="install-ios" hidden>iPad / iPhone (Safari) : touchez <b>Partager</b> <span aria-hidden="true">⎋</span>, puis <b>Sur l’écran d’accueil</b>, puis <b>Ajouter</b>. Ouvrez ensuite l’application depuis l’icône et connectez-vous à nouveau.</p>
+      <div id="install-ios" hidden><ol class="install-steps">
+        <li id="install-ios-share">Touchez l’icône <b>Partager</b> <span class="share-glyph" aria-hidden="true">⬆︎</span> (un carré avec une flèche vers le haut) : <span id="install-ios-where">en haut à droite, à côté de la barre d’adresse</span>.</li>
+        <li>Faites défiler la liste et touchez <b>Sur l’écran d’accueil</b> (ou <b>Ajouter à l’écran d’accueil</b>).</li>
+        <li>Touchez <b>Ajouter</b> : l’icône « Constats » apparaît sur l’écran d’accueil.</li>
+        <li>Fermez cette page, ouvrez l’application <b>depuis l’icône</b> et reconnectez-vous avec un nouveau code.</li></ol>
+      <p class="help" id="install-ios-other" hidden>Si l’option « Sur l’écran d’accueil » n’apparaît pas dans ce navigateur, ouvrez l’adresse <b>app.expertform.fr</b> dans <b>Safari</b> et recommencez.</p></div>
       <p id="install-android" hidden>Samsung / Android : touchez le bouton ci-dessous, ou le menu du navigateur puis <b>Ajouter à l’écran d’accueil</b> / <b>Installer l’application</b>.</p>
       <button class="primary" id="install-button" type="button" hidden>Installer l’application</button>
     </section>

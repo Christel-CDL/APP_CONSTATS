@@ -9,7 +9,10 @@ const users=[{id:'dev-ej',email:'expert.ej@example.com',name:'Expert TEST-EJ',or
 const png='data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==';
 (async()=>{
   const codes={};let log='';
-  const server=spawn(process.execPath,[path.join(__dirname,'../server/index.cjs')],{env:{...process.env,PORT:String(PORT),APP_ROOT:path.join(__dirname,'..'),APP_URL:BASE,SESSION_SECRET:'x'.repeat(40),DEV_USERS:JSON.stringify(users),DEV_LOG_CODES:'1'}});
+  const projects=[{id:'dev-p90',owner:'dev-ej',fields:{'Nom du projet':'ZZ EJ AIRTABLE','Référence':'EJ26-0099','Type':{name:'Expertise judiciaire'},'Client / Juridiction':'PARTIE_SECRETE','Commune':'Villefictive','Statut':{name:'En cours'}}},
+    {id:'dev-p91',owner:'dev-ej',fields:{'Nom du projet':'ZZ EP DU MAUVAIS PROFIL','Type':{name:'Expertise amiable'}}},
+    {id:'dev-p92',owner:'dev-ep',fields:{'Nom du projet':'ZZ EP AIRTABLE','Type':{name:'Expertise amiable'},'Client / Juridiction':'Client EP visible'}}];
+  const server=spawn(process.execPath,[path.join(__dirname,'../server/index.cjs')],{env:{...process.env,PORT:String(PORT),APP_ROOT:path.join(__dirname,'..'),APP_URL:BASE,SESSION_SECRET:'x'.repeat(40),DEV_USERS:JSON.stringify(users),DEV_PROJECTS:JSON.stringify(projects),DEV_LOG_CODES:'1'}});
   server.stdout.on('data',d=>{log+=d;for(const m of String(d).matchAll(/Code pour (\S+) : (\d{6})/g))codes[m[1]]=m[2];});server.stderr.on('data',d=>{log+=d;});
   for(let i=0;i<50&&!log.includes('port');i++)await new Promise(r=>setTimeout(r,100));
   const browser=await chromium.launch({channel:process.env.PLAYWRIGHT_CHANNEL||'msedge',headless:true});
@@ -45,6 +48,19 @@ const png='data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAA
     assert.ok(await page.evaluate(async()=>(await listDrafts()).some(d=>d.draftId==='legacy-1')),'Anciens constats copiés dans le profil');
     assert.ok(await page.evaluate(()=>readDossiers().some(d=>d.name==='ZZ ANCIEN DOSSIER')));
     assert.deepEqual(await page.evaluate(()=>[...$('#case-type').options].filter(o=>!o.disabled).map(o=>o.value)),['ej','autre'],'Profil judiciaire : EJ et constat');
+    // Dossiers Airtable : récupérés pour ce profil, sans client en expertise judiciaire, sans les dossiers d'un autre type
+    await page.waitForFunction(()=>readDossiers().some(d=>d.airtableId==='dev-p90'));
+    const synced=await page.evaluate(()=>readDossiers().find(d=>d.airtableId==='dev-p90'));assert.equal(synced.reference,'EJ26-0099');assert.equal(synced.client,'');assert.equal(synced.type,'Expertise judiciaire');
+    assert.ok(!(await page.evaluate(()=>readDossiers().some(d=>d.airtableId==='dev-p91'))),'Dossier privé absent du profil judiciaire');
+    const raw=await page.evaluate(()=>fetch('/api/projets?profil=dev-ej').then(r=>r.text()));assert.ok(!raw.includes('PARTIE_SECRETE'),'Client/juridiction EJ jamais transmis');
+    assert.equal(await page.evaluate(()=>fetch('/api/projets?profil=dev-ep').then(r=>r.status)),401,'Profil non connecté : accès refusé');
+    assert.equal(await page.evaluate(()=>fetch('/api/projets',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({profil:'dev-ej',name:'X',type:'Expertise privée'})}).then(r=>r.status)),403,'Type hors profil refusé');
+    // Nouveau dossier créé dans l'application → enregistré dans Airtable
+    await page.locator('.nav-item[data-view="dossiers"]').click();await page.locator('#new-dossier').click();
+    await page.locator('#dossier-form [name=name]').fill('ZZ NOUVEAU EJ');await page.locator('#dossier-form [name=reference]').fill('EJ26-0100');await page.locator('#dossier-form button[type=submit]').click();
+    await page.waitForFunction(()=>{const d=readDossiers().find(x=>x.name==='ZZ NOUVEAU EJ');return d&&d.airtableId&&!d.pendingSync;});
+    assert.ok((await page.evaluate(()=>fetch('/api/projets?profil=dev-ej').then(r=>r.json()))).projets.some(p=>p.name==='ZZ NOUVEAU EJ'&&p.reference==='EJ26-0100'));
+    assert.match(await page.locator('#dossier-sync').innerText(),/Synchronisé avec Airtable/);
     // Parcours et exports sous la politique de sécurité du contenu
     await page.evaluate(png=>{saveDossier({name:'ZZ DOSSIER EJ',reference:'EJ26-0001',type:'Expertise judiciaire',address:'1 rue Test'});startNewVisit(readDossiers().find(d=>d.name==='ZZ DOSSIER EJ').id);},png);
     await page.waitForFunction(()=>state.caseType==='ej');await page.evaluate(png=>{addPhoto(png,'Vue générale',new Date().toISOString());state.currentStep=4;renderStep();},png);
@@ -62,6 +78,7 @@ const png='data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAA
     assert.ok(!(await page.evaluate(()=>readDossiers().some(d=>d.name==='ZZ DOSSIER EJ'))),'Données du profil judiciaire invisibles');
     assert.ok(!(await page.evaluate(async()=>(await listDrafts()).some(d=>d.caseReference==='EJ26-0001'))));
     assert.deepEqual(await page.evaluate(()=>[...$('#case-type').options].filter(o=>!o.disabled).map(o=>o.value)),['ep','autre']);
+    await page.waitForFunction(()=>readDossiers().some(d=>d.airtableId==='dev-p92'));assert.equal(await page.evaluate(()=>readDossiers().find(d=>d.airtableId==='dev-p92').client),'Client EP visible');
     // Relancement : choix du profil demandé
     await page.evaluate(()=>sessionStorage.clear());await page.goto(BASE+'/index.html');await page.waitForURL(/demarrer\.html/);await page.waitForFunction(()=>document.querySelectorAll('.profile').length===2);
     // Déconnexion d'un profil
@@ -69,6 +86,6 @@ const png='data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAA
     await page.waitForURL(/index\.html/);// un seul profil restant : ouverture directe
     const me=await page.evaluate(()=>fetch('/api/me').then(r=>r.json()));assert.deepEqual(me.profiles.map(p=>p.id),['dev-ej']);
     assert.deepEqual(problems,[],'Aucune erreur ni blocage CSP');
-    console.log('PASS: access control (redirects, 401, public assets, CSP), e-mail code login, anti-enumeration, suspended account, brute force, legacy data copy, two profiles with isolated data and mission types, launcher choice, logout, exports under CSP');
+    console.log('PASS: access control (redirects, 401, public assets, CSP), e-mail code login, anti-enumeration, suspended account, brute force, legacy data copy, two profiles with isolated data and mission types, launcher choice, logout, exports under CSP, Airtable dossiers (per profile, no EJ client, create/sync, cross-profile refusal)');
   }finally{await browser.close();server.kill();}
 })().catch(e=>{console.error(e);process.exit(1);});

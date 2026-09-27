@@ -10,16 +10,22 @@ const config={
   port:Number(env.PORT)||8080,
   root:path.resolve(env.APP_ROOT||path.join(__dirname,'..','public')),
   appUrl:(env.APP_URL||'').replace(/\/+$/,''),
-  secret:env.SESSION_SECRET||'',
+  secret:String(env.SESSION_SECRET||'').trim(),
   sessionDays:Number(env.SESSION_DAYS)||90,
   airtable:{token:env.AIRTABLE_TOKEN||'',base:env.AIRTABLE_BASE_ID||'',table:env.AIRTABLE_USERS_TABLE||'Utilisateurs'},
   mail:{host:env.SMTP_HOST||'',port:Number(env.SMTP_PORT)||587,secure:env.SMTP_SECURE==='true',user:env.SMTP_USER||'',pass:env.SMTP_PASS||'',from:env.MAIL_FROM||''},
   devLogCodes:env.DEV_LOG_CODES==='1',
   // Tests uniquement : comptes fournis en JSON au lieu d'Airtable.
-  devUsers:env.DEV_USERS?JSON.parse(env.DEV_USERS):null
+  devUsers:env.DEV_USERS?JSON.parse(env.DEV_USERS):null,
+  projectsTable:env.AIRTABLE_PROJECTS_TABLE||'Projets'
 };
-if(config.secret.length<32){console.error('SESSION_SECRET manquant ou trop court (32 caractères minimum).');process.exit(1);}
-if(!config.devUsers&&(!config.airtable.token||!config.airtable.base)){console.error('AIRTABLE_TOKEN et AIRTABLE_BASE_ID sont requis.');process.exit(1);}
+// Diagnostic de démarrage : présence et longueur de chaque réglage, jamais leur valeur.
+{const report=['APP_URL','SESSION_SECRET','AIRTABLE_TOKEN','AIRTABLE_BASE_ID','SMTP_HOST','SMTP_PORT','SMTP_USER','SMTP_PASS','MAIL_FROM'].map(name=>{const value=String(env[name]||'').trim();return `  ${name} : ${value?`reçu (${value.length} caractères)`:'ABSENT'}`;});
+  const problems=[];if(config.secret.trim().length<32)problems.push(`SESSION_SECRET manquant ou trop court (${config.secret.trim().length} caractères reçus, 32 minimum, 64 recommandés).`);
+  if(!config.devUsers&&(!config.airtable.token||!config.airtable.base))problems.push('AIRTABLE_TOKEN et AIRTABLE_BASE_ID sont requis.');
+  if(!config.devUsers&&!config.mail.host&&!config.devLogCodes)problems.push('SMTP_HOST manquant : les codes de connexion ne pourraient pas être envoyés.');
+  console.log('Réglages reçus par le conteneur :\n'+report.join('\n'));
+  if(problems.length){console.error('DÉMARRAGE IMPOSSIBLE :\n- '+problems.join('\n- ')+'\nRenseigner ces variables dans hPanel (projet app-constats), puis Déployer.');process.exit(1);}}
 
 const ROLE_TYPES={'Expert judiciaire':['ej','autre'],'Expert':['ep','autre']};
 const ALLOWED_STATUS=new Set(['Actif','Invité']);
@@ -43,8 +49,8 @@ function setSessions(res,tokens){const value=tokens.join('~'),secure=config.appU
 const statusCache=new Map();// id → {user, at}
 function userFrom(record){const f=record.fields||{};const role=typeof f['Rôle']==='string'?f['Rôle']:f['Rôle']?.name;const status=typeof f['Statut du compte']==='string'?f['Statut du compte']:f['Statut du compte']?.name;
   return {id:record.id,email:String(f.Email||'').toLowerCase(),name:String(f.Nom||''),organisation:String(f.Organisation||''),role:role||'',status:status||''};}
-async function airtable(pathname,options={}){
-  const res=await fetch(`https://api.airtable.com/v0/${encodeURIComponent(config.airtable.base)}/${encodeURIComponent(config.airtable.table)}${pathname}`,{...options,headers:{Authorization:`Bearer ${config.airtable.token}`,'Content-Type':'application/json',...options.headers}});
+async function airtable(pathname,options={},table=config.airtable.table){
+  const res=await fetch(`https://api.airtable.com/v0/${encodeURIComponent(config.airtable.base)}/${encodeURIComponent(table)}${pathname}`,{...options,headers:{Authorization:`Bearer ${config.airtable.token}`,'Content-Type':'application/json',...options.headers}});
   if(!res.ok)throw new Error(`Airtable ${res.status}`);return res.json();}
 async function findUserByEmail(email){
   if(config.devUsers)return config.devUsers.find(u=>u.email===email)||null;
@@ -59,6 +65,44 @@ async function findUserById(id){
 async function activate(user){if(config.devUsers||user.status!=='Invité')return;
   try{await airtable('/'+encodeURIComponent(user.id),{method:'PATCH',body:JSON.stringify({fields:{'Statut du compte':'Actif','Inscrit le':new Date().toISOString().slice(0,10)}})});statusCache.delete(user.id);}
   catch(error){console.warn('Activation du compte non enregistrée dans Airtable :',error.message);}}
+// ── Dossiers (table Projets) ─────────────────────────────────────
+// Chaque profil ne voit que ses dossiers (champ Responsable) et ses types de mission.
+// Expertise judiciaire : le champ « Client / Juridiction » n'est jamais lu, transmis ni écrit (RGPD).
+const PROJECT_TYPES={'Expertise judiciaire':'ej','Expertise amiable':'ep','Expertise privée':'ep','Conseil / AMO':'autre','Diagnostic':'autre','Suivi de chantier':'autre'};
+const LOCAL_TO_AIRTABLE_TYPE={'Expertise judiciaire':'Expertise judiciaire','Expertise privée':'Expertise amiable','Expertise amiable':'Expertise amiable','Conseil / AMO':'Conseil / AMO','Diagnostic':'Diagnostic','Suivi de chantier':'Suivi de chantier'};
+const LOCAL_STATUS=new Set(['En cours','En attente','Clos']);
+const devProjects=env.DEV_PROJECTS?JSON.parse(env.DEV_PROJECTS):[];// tests uniquement
+const selectName=v=>typeof v==='string'?v:v?.name||'';
+function projectFrom(record){const f=record.fields||{},airtableType=selectName(f.Type),kind=PROJECT_TYPES[airtableType]||'autre',status=selectName(f.Statut);
+  const address=[f['Adresse du site'],[f['Code postal'],f.Commune].filter(Boolean).join(' ')].filter(Boolean).join(', ');
+  return {airtableId:record.id,kind,name:String(f['Nom du projet']||'').slice(0,200),reference:String(f['Référence']||'').slice(0,100),type:airtableType==='Expertise amiable'?'Expertise privée':airtableType||'Autre',
+    client:kind==='ep'?String(f['Client / Juridiction']||'').slice(0,200):'',address:address.slice(0,300),status:LOCAL_STATUS.has(status)?status:status==='Archivé'?'Clos':'En cours'};}
+function projectFields(body,kind,creating,userId){const text=(v,max)=>String(v??'').trim().slice(0,max),fields={};
+  if(body.name!==undefined)fields['Nom du projet']=text(body.name,200);if(body.reference!==undefined)fields['Référence']=text(body.reference,100);
+  if(body.address!==undefined)fields['Adresse du site']=text(body.address,300);if(LOCAL_STATUS.has(body.status))fields.Statut=body.status;
+  if(LOCAL_TO_AIRTABLE_TYPE[body.type])fields.Type=LOCAL_TO_AIRTABLE_TYPE[body.type];
+  if(kind==='ep'&&body.client!==undefined)fields['Client / Juridiction']=text(body.client,200);
+  if(creating){fields.Responsable=[userId];fields['Ouvert le']=new Date().toISOString().slice(0,10);}
+  return fields;}
+async function userProjectIds(userId){if(config.devUsers)return devProjects.filter(p=>p.owner===userId).map(p=>p.id);
+  const record=await airtable('/'+encodeURIComponent(userId));return Array.isArray(record.fields?.Projets)?record.fields.Projets:[];}
+async function listProjects(user){const ids=(await userProjectIds(user.id)).filter(id=>/^rec\w{14}$|^dev-/.test(id)).slice(0,200),types=ROLE_TYPES[user.role]||['autre'];
+  let records=[];
+  if(config.devUsers)records=devProjects.filter(p=>ids.includes(p.id)).map(p=>({id:p.id,fields:p.fields}));
+  else for(let i=0;i<ids.length;i+=50){const formula=`OR(${ids.slice(i,i+50).map(id=>`RECORD_ID()='${id}'`).join(',')})`;
+    const data=await airtable(`?filterByFormula=${encodeURIComponent(formula)}&pageSize=100`,{},config.projectsTable);records.push(...(data.records||[]));}
+  return records.map(projectFrom).filter(p=>types.includes(p.kind)&&p.name).map(({kind,...p})=>p);}
+async function saveProject(user,body,airtableId){
+  const kind=PROJECT_TYPES[LOCAL_TO_AIRTABLE_TYPE[body.type]]||'autre';if(body.type&&!(ROLE_TYPES[user.role]||['autre']).includes(kind))throw Object.assign(new Error('type'),{status:403});
+  if(!airtableId&&!String(body.name||'').trim())throw Object.assign(new Error('name'),{status:400});
+  if(airtableId&&!(await userProjectIds(user.id)).includes(airtableId))throw Object.assign(new Error('owner'),{status:404});
+  const fields=projectFields(body,kind,!airtableId,user.id);
+  if(config.devUsers){if(airtableId){const p=devProjects.find(x=>x.id===airtableId);Object.assign(p.fields,fields);return projectFrom(p);}
+    const p={id:'dev-p'+(devProjects.length+1),owner:user.id,fields:{...fields,Type:fields.Type?{name:fields.Type}:undefined,Statut:fields.Statut?{name:fields.Statut}:undefined}};devProjects.push(p);return projectFrom(p);}
+  const record=airtableId?await airtable('/'+encodeURIComponent(airtableId),{method:'PATCH',body:JSON.stringify({fields})},config.projectsTable)
+    :await airtable('',{method:'POST',body:JSON.stringify({fields})},config.projectsTable);
+  return projectFrom(record);}
+async function sessionUser(req,id){if(!sessionTokens(req).some(t=>readToken(t).id===id))return null;const user=await findUserById(id).catch(()=>null);return user&&ALLOWED_STATUS.has(user.status)?user:null;}
 const publicProfile=user=>({id:user.id,name:user.name,email:user.email,organisation:user.organisation,role:user.role,types:ROLE_TYPES[user.role]||['autre']});
 
 // ── Codes de connexion ───────────────────────────────────────────
@@ -89,7 +133,19 @@ const clientIp=req=>String(req.headers['x-forwarded-for']||'').split(',').pop().
 const sameOrigin=req=>{const origin=req.headers.origin;if(!origin)return true;try{return new URL(origin).host===req.headers.host;}catch{return false;}};
 
 async function api(req,res,pathname){
-  if(req.method==='POST'&&!sameOrigin(req))return send(res,403,{message:'Origine refusée.'});
+  if(req.method!=='GET'&&!sameOrigin(req))return send(res,403,{message:'Origine refusée.'});
+  const projectPath=/^\/api\/projets(?:\/(rec\w{14}|dev-p\d+))?$/.exec(pathname);
+  if(projectPath){
+    const url=new URL(req.url,'http://localhost'),body=req.method==='GET'?{}:await readJson(req),profile=String(url.searchParams.get('profil')||body.profil||'');
+    const user=await sessionUser(req,profile);if(!user)return send(res,401,{message:'Profil non connecté.'});
+    try{
+      if(req.method==='GET'&&!projectPath[1])return send(res,200,{projets:await listProjects(user)});
+      if(req.method==='POST'&&!projectPath[1])return send(res,201,{projet:await saveProject(user,body)});
+      if(req.method==='PATCH'&&projectPath[1])return send(res,200,{projet:await saveProject(user,body,projectPath[1])});
+    }catch(error){if(error.status)return send(res,error.status,{message:error.status===403?'Type de mission non autorisé pour ce profil.':'Dossier introuvable ou invalide.'});
+      console.error('Dossiers Airtable :',error.message);return send(res,503,{message:'Airtable indisponible : dossier conservé sur l’appareil.'});}
+    return send(res,405,{message:'Méthode non autorisée.'});
+  }
   if(pathname==='/api/me'&&req.method==='GET'){
     const profiles=[],kept=[];
     for(const token of sessionTokens(req)){const data=readToken(token),user=await findUserById(data.id).catch(()=>null);
