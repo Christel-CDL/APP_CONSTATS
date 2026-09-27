@@ -6,6 +6,8 @@
   try{
     const registration=await navigator.serviceWorker.register('./sw.js',{scope:'./'});
     describe(false);await navigator.serviceWorker.ready;describe(true);
+    // Stockage persistant : le navigateur n'efface pas les constats de l'appareil en cas de manque d'espace.
+    try{if(navigator.storage?.persist&&!(await navigator.storage.persisted()))await navigator.storage.persist();}catch{}
     window.addEventListener('online',()=>describe(true));window.addEventListener('offline',()=>describe(true));
     const update=()=>{if(registration.waiting)status.textContent+=' Une mise à jour sera chargée après fermeture de tous les onglets de cette application.';};
     update();registration.addEventListener('updatefound',()=>registration.installing?.addEventListener('statechange',update));
