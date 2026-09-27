@@ -1,0 +1,19 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#7FA34B"/><stop offset="1" stop-color="#4C6A28"/></linearGradient>
+  </defs>
+  <rect width="512" height="512" rx="112" fill="url(#bg)"/>
+  <!-- Porte-document -->
+  <rect x="126" y="104" width="260" height="318" rx="30" fill="#FFFFFF"/>
+  <rect x="196" y="82" width="120" height="50" rx="18" fill="#1A3A5C"/>
+  <circle cx="256" cy="107" r="9" fill="#FFFFFF"/>
+  <!-- Objectif photo -->
+  <circle cx="256" cy="232" r="72" fill="#1A3A5C"/>
+  <circle cx="256" cy="232" r="46" fill="#FFFFFF"/>
+  <circle cx="256" cy="232" r="26" fill="#6B8C3E"/>
+  <circle cx="244" cy="220" r="8" fill="#FFFFFF" opacity=".85"/>
+  <!-- Lignes de constat + validation -->
+  <rect x="166" y="336" width="112" height="16" rx="8" fill="#C8D0DA"/>
+  <rect x="166" y="368" width="84" height="16" rx="8" fill="#C8D0DA"/>
+  <path d="M296 362 l22 22 l42 -48" fill="none" stroke="#B07A10" stroke-width="20" stroke-linecap="round" stroke-linejoin="round"/>
+</svg>

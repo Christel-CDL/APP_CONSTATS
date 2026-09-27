@@ -1,0 +1,9 @@
+{
+  "name": "constats-server",
+  "private": true,
+  "description": "Serveur d'accès de l'application Constats (fichiers statiques derrière connexion par code e-mail).",
+  "main": "index.cjs",
+  "scripts": {"start": "node index.cjs"},
+  "engines": {"node": ">=22"},
+  "dependencies": {"nodemailer": "^7.0.0"}
+}

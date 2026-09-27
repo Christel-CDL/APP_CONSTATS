@@ -1,6 +1,10 @@
 # APP_CONSTATS
 Application de création de rapport de constats géolocalisés
 
+## Accès et installation
+
+En production, l'application est protégée par connexion (code envoyé par e-mail, comptes Airtable) et s'installe comme une icône sur l'écran d'accueil (iPad, Samsung). Chaque compte correspond à un profil (expertise judiciaire ou privée), choisi au lancement. Voir [accès et installation](docs/ACCES_ET_INSTALLATION.md).
+
 ## Lancer l'application
 
 Depuis la racine du dépôt, avec Node.js installé :
@@ -8,6 +12,8 @@ Depuis la racine du dépôt, avec Node.js installé :
 ```sh
 node server.cjs
 ```
+
+`server.cjs` est le serveur de développement, sans compte (profil « Mode local »). La production utilise `server/index.cjs`.
 
 Ouvrir http://127.0.0.1:8765/ dans le navigateur. Sous Windows, `OUVRIR_CONSTAT.cmd` permet également le lancement.
 

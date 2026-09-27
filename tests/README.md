@@ -18,6 +18,7 @@ node tests/dossiers.cjs
 node tests/html-report.cjs
 node tests/pv-report.cjs
 node tests/pv.cjs
+node tests/auth.cjs
 ```
 
 `html-report.cjs` et `pv-report.cjs` s'exécutent sans navigateur ni serveur. `dossiers.cjs` couvre aussi le parcours expertise judiciaire (absence de données nominatives, export HTML).
@@ -27,3 +28,5 @@ node tests/pv.cjs
 Les tests couvrent le parcours complet, la reprise, les inclusions DOCX, les fichiers PDF, les rapports longs, le mode hors connexion et plusieurs protections contre les pertes de données. Le contrôle visuel Word et les permissions matérielles sur Safari iPad/Chrome Android restent manuels.
 
 `pv.cjs` enchaîne un PV de réception puis un PV de levée des réserves sur des données fictives.
+
+`auth.cjs` démarre le serveur de production (`server/index.cjs`, après `npm ci` dans `server/`) avec des comptes fictifs (`DEV_USERS`) et les codes affichés en console (`DEV_LOG_CODES=1`, réservé aux tests) : redirections, refus sans session, anti-énumération, compte suspendu, essais limités, deux profils isolés, reprise des anciens constats, exports sous CSP.

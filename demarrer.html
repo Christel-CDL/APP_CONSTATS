@@ -1,0 +1,39 @@
+<!doctype html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+  <meta name="robots" content="noindex, nofollow">
+  <meta name="theme-color" content="#4C6A28">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-title" content="Constats">
+  <meta name="apple-mobile-web-app-status-bar-style" content="default">
+  <link rel="manifest" href="manifest.webmanifest">
+  <link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+  <link rel="icon" type="image/png" sizes="192x192" href="icons/icon-192.png">
+  <title>Constats — CDL EXPERT</title>
+  <link rel="stylesheet" href="launcher.css">
+</head>
+<body>
+  <main class="launcher">
+    <header><img src="icons/icon-192.png" alt="" width="72" height="72"><div><h1>Constats</h1><p>CDL EXPERT — constats, rapports et procès-verbaux</p></div></header>
+    <p class="status" id="status" role="status">Vérification de la session…</p>
+    <section id="profiles" hidden><h2>Choisir le profil</h2><div id="profile-list" class="profile-list"></div><button class="link" id="add-profile" type="button">＋ Ajouter un profil (autre adresse e-mail)</button></section>
+    <section id="login" hidden>
+      <h2 id="login-title">Connexion</h2>
+      <form id="email-form"><label>Adresse e-mail du compte<input type="email" id="email" autocomplete="email" required maxlength="200"></label><button class="primary" type="submit">Recevoir un code de connexion</button><p class="help">Un code à 6 chiffres et un lien valables 15 minutes sont envoyés à cette adresse, si elle correspond à un compte autorisé.</p></form>
+      <form id="code-form" hidden><label>Code reçu par e-mail<input id="code" inputmode="numeric" autocomplete="one-time-code" pattern="[0-9]{6}" maxlength="6" required></label><button class="primary" type="submit">Se connecter</button><button class="link" type="button" id="restart">Changer d’adresse ou renvoyer un code</button><p class="help">Saisissez le code ici, dans l’application : sur iPad et iPhone, l’icône de l’écran d’accueil ne partage pas la session du navigateur.</p></form>
+      <button class="link" type="button" id="cancel-login" hidden>← Retour aux profils</button>
+    </section>
+    <section id="install" class="install" hidden>
+      <h2>Installer l’icône sur cet appareil</h2>
+      <p id="install-ios" hidden>iPad / iPhone (Safari) : touchez <b>Partager</b> <span aria-hidden="true">⎋</span>, puis <b>Sur l’écran d’accueil</b>, puis <b>Ajouter</b>. Ouvrez ensuite l’application depuis l’icône et connectez-vous à nouveau.</p>
+      <p id="install-android" hidden>Samsung / Android : touchez le bouton ci-dessous, ou le menu du navigateur puis <b>Ajouter à l’écran d’accueil</b> / <b>Installer l’application</b>.</p>
+      <button class="primary" id="install-button" type="button" hidden>Installer l’application</button>
+    </section>
+    <footer><small>Accès réservé. Les constats restent enregistrés sur cet appareil, séparément pour chaque profil.</small></footer>
+  </main>
+  <script src="launcher.js"></script>
+</body>
+</html>

@@ -1,7 +1,7 @@
 'use strict';
 // Dossiers (projets) : métadonnées légères, gardées dans le localStorage de l'appareil.
 // Les constats restent dans IndexedDB et référencent leur dossier par dossierId.
-const DOSSIER_KEY='constat-dossiers'+(TEST_MODE?'-verification':'');
+const DOSSIER_KEY='constat-dossiers'+PROFILE.suffix;
 const DOSSIER_FIELDS=['name','reference','type','client','address','status'];
 const DOSSIER_STATUS={'En cours':'progress','En attente':'draft','Clos':'done'};
 let editingDossierId=null;
@@ -20,9 +20,11 @@ function formatDate(value,withTime){const date=new Date(value);if(Number.isNaN(d
 function statusBadge(status){return `<span class="status ${DOSSIER_STATUS[status]||'progress'}">${escapeHtml(status)}</span>`;}
 
 // Formulaire de création / modification
+// Chaque profil ne propose que ses types de mission (profil judiciaire / profil privé).
+function restrictDossierTypes(select){for(const option of select.options){const allowed=profileAllows(reportTypeOf(option.value))||option.value===select.value&&!!editingDossierId;option.disabled=!allowed;option.hidden=!allowed;}if(select.selectedOptions[0]?.disabled)select.value=[...select.options].find(o=>!o.disabled)?.value||select.value;}
 function syncDossierFormType(){const form=$('#dossier-form'),ej=reportTypeOf(form.elements.type.value)==='ej';form.elements.client.disabled=ej;if(ej)form.elements.client.value='';form.elements.reference.placeholder=ej?'Référence OPALEXE (ex. EJ26-1402)':'Référence interne…';$('#dossier-client-note').hidden=!ej;}
 $('#dossier-form').elements.type.addEventListener('change',syncDossierFormType);
-function openDossierForm(id){const dossier=dossierById(id),form=$('#dossier-form');editingDossierId=dossier?dossier.id:null;form.reset();for(const key of DOSSIER_FIELDS)if(dossier)form.elements[key].value=dossier[key]||'';if(dossier&&dossier.type==='Expertise amiable')form.elements.type.value='Expertise privée';syncDossierFormType();$('#dossier-dialog-title').textContent=dossier?'Modifier le dossier':'Nouveau dossier';$('#dossier-dialog').showModal();form.elements.name.focus();}
+function openDossierForm(id){const dossier=dossierById(id),form=$('#dossier-form');editingDossierId=dossier?dossier.id:null;form.reset();for(const key of DOSSIER_FIELDS)if(dossier)form.elements[key].value=dossier[key]||'';if(dossier&&dossier.type==='Expertise amiable')form.elements.type.value='Expertise privée';restrictDossierTypes(form.elements.type);syncDossierFormType();$('#dossier-dialog-title').textContent=dossier?'Modifier le dossier':'Nouveau dossier';$('#dossier-dialog').showModal();form.elements.name.focus();}
 function closeDossierForm(){$('#dossier-dialog').close();editingDossierId=null;}
 $('#new-dossier').addEventListener('click',()=>openDossierForm());
 $('#picker-new-dossier').addEventListener('click',()=>openDossierForm());

@@ -80,3 +80,20 @@ Hooks : `entreprise_nom`, `entreprise_adresse`, `entreprise_rcs`, `entreprise_re
 lignes `data-reserve-index` (`reserve_localisation`, `reserve_desordre`, `reserve_delai` ou `reserve_levee`,
 `reserve_observations`, `reserve_photos`), `doe`, `montant_total`, `montant_solde`, `signataire_moa`,
 `signataire_entreprise`.
+
+## Constat simple, signatures et protection avant effacement (27 septembre)
+
+- **Constat simple avec suites à donner** (expertise privée, « Document à produire ») : en-tête CDL, identification,
+  présents, avis de l'expert, photos, tableau « Suites à donner demandées » (type, description, destinataire,
+  échéance) ; sans mission ni conclusions. Fichier `[RÉF]_CONSTAT-SIMPLE_[date].html`.
+- **Signatures au doigt ou au stylet** : maître d'ouvrage et entreprise dans les PV ; signature de l'expert
+  sur tous les documents, affichée seulement si la case « J'appose ma signature d'expert » est cochée.
+  Chaque signature est datée et associée à une empreinte du contenu du PV : si le PV est modifié ensuite,
+  l'export est bloqué jusqu'à une nouvelle signature (ou l'effacement de l'ancienne). Il s'agit d'une
+  signature électronique simple (art. 1367 C. civ. ; règlement eIDAS n° 910/2014, art. 25) : elle ne peut
+  être écartée au seul motif de sa forme électronique, mais sa force probante reste inférieure à celle d'une
+  signature avancée ou qualifiée ; pour un enjeu contentieux, faire aussi signer l'exemplaire imprimé.
+- **Avant tout effacement de données de parties** (passage d'un constat hors expertise privée, ou en
+  expertise judiciaire) : si ces données n'ont pas été exportées depuis leur dernière modification
+  (export HTML/Word du document, ou sauvegarde JSON), l'application télécharge d'abord une sauvegarde
+  complète du constat, puis demande confirmation après vérification du fichier.
