@@ -15,25 +15,31 @@ const OPALEXE_PATTERN=/^EJ\d{2}-\d{1,6}$/i;
 function reportTypeOf(dossierType){return dossierType==='Expertise judiciaire'?'ej':dossierType==='Expertise privée'||dossierType==='Expertise amiable'?'ep':'autre';}
 function isOpalexeReference(value){return OPALEXE_PATTERN.test(String(value||'').trim());}
 function reportFileName(reference,date){const ref=String(reference||'').trim().replace(/[^\w-]+/g,'-').replace(/^-+|-+$/g,'').slice(0,60);const day=/^\d{4}-\d{2}-\d{2}$/.test(date||'')?date:new Date().toISOString().slice(0,10);return `${ref?ref+'_':''}CONSTAT_${day}.html`;}
-function buildConstatHtml(data,logo=typeof CDL_LOGO==='string'?CDL_LOGO:''){
-  const type=REPORT_TYPES[data.type]?data.type:'autre',info=REPORT_TYPES[type],ep=type==='ep',ej=type==='ej';
-  const esc=value=>String(value??'').replace(/[&<>"']/g,ch=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[ch]));
-  const text=value=>esc(String(value??'').trim()).replace(/\r?\n/g,'<br>');
-  const image=src=>typeof src==='string'&&/^data:image\/(jpeg|png|webp|gif);base64,/i.test(src)?src:'';
-  const shortDate=value=>{const m=/^(\d{4})-(\d{2})-(\d{2})$/.exec(value||'');return m?`${m[3]}/${m[2]}/${m[1]}`:esc(value||'');};
-  const longDate=date=>date.toLocaleDateString('fr-FR',{day:'numeric',month:'long',year:'numeric'});
-  const dms=(value,pos,neg)=>{const t=Math.round(Math.abs(value)*3600);return `${Math.floor(t/3600)}°${String(Math.floor(t%3600/60)).padStart(2,'0')}'${String(t%60).padStart(2,'0')}" ${value<0?neg:pos}`;};
-  const p=data.position,gps=p&&Number.isFinite(p.lat)&&Number.isFinite(p.lng)?`${dms(p.lat,'N','S')} / ${dms(p.lng,'E','O')}${Number.isFinite(p.accuracy)?` (précision ±${Math.round(p.accuracy)} m)`:''}`:'';
-  const included=(photo,field)=>photo.include?.[field]!==false;
-  // Un champ exclu est rendu vide et masqué : le hook reste en place, le texte ne quitte pas l'application.
+// Fonctions partagées avec les procès-verbaux (pv-report.js).
+const reportEsc=value=>String(value??'').replace(/[&<>"']/g,ch=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[ch]));
+const reportText=value=>reportEsc(String(value??'').trim()).replace(/\r?\n/g,'<br>');
+const reportImage=src=>typeof src==='string'&&/^data:image\/(jpeg|png|webp|gif);base64,/i.test(src)?src:'';
+const reportShortDate=value=>{const m=/^(\d{4})-(\d{2})-(\d{2})$/.exec(value||'');return m?`${m[3]}/${m[2]}/${m[1]}`:reportEsc(value||'');};
+const reportLongDate=date=>date.toLocaleDateString('fr-FR',{day:'numeric',month:'long',year:'numeric'});
+function reportLines(value){return String(value||'').split(/\r?\n/).map(line=>line.trim()).filter(Boolean);}
+// Sections photographiques par sujet. Un champ exclu est rendu vide et masqué : le hook reste en place, le texte ne quitte pas l'application.
+function reportPhotoSections(photos,subjects){
+  const esc=reportEsc,text=reportText,image=reportImage,included=(photo,field)=>photo.include?.[field]!==false;
   const part=(photo,field,tag,cls,name,content)=>{const on=included(photo,field)&&String(content||'').trim();return `<${tag} class="${cls}" data-field="${name}" data-photo-index="${photo.number}" data-include="${field}"${on?'':' hidden'}>${on?text(content):''}</${tag}>`;};
   const photoHtml=photo=>{const src=image(photo.annotatedSrc)||image(photo.src),drawing=included(photo,'drawing')&&image(photo.drawing);
     return `<div class="photo-item" data-photo-index="${photo.number}"><div class="photo-num">Photo ${photo.number}</div>${part(photo,'description','div','photo-caption-top','legende',photo.description)}${src?`<img class="photo-img" data-field="photo_img" data-photo-index="${photo.number}" src="${src}" alt="Photo ${photo.number}">`:'<div class="photo-placeholder">[ Photo indisponible ]</div>'}${part(photo,'comment','div','photo-comment','commentaire',photo.comment)}${part(photo,'transcript','div','photo-transcript','transcript',photo.transcript)}${drawing?`<img class="photo-drawing" data-field="note_manuscrite" data-photo-index="${photo.number}" data-include="drawing" src="${drawing}" alt="Note manuscrite, photo ${photo.number}">`:''}</div>`;};
-  const photos=Array.isArray(data.photos)?data.photos:[];
-  const sections=(data.subjects||[]).map(subject=>({subject,photos:photos.filter(ph=>ph.subject===subject)})).filter(s=>s.photos.length).map((s,i)=>`<div class="constat-section" data-section-index="${i+1}"><div class="section-header"><h3 data-field="section_titre" data-section-index="${i+1}">${esc(s.subject)}</h3></div><div class="section-body"><div class="photo-grid cols-2">${s.photos.map(photoHtml).join('')}</div><div class="section-comment" data-field="synthese_section" data-section-index="${i+1}"></div><div class="expert-note" data-field="note_expertale" data-section-index="${i+1}"></div></div></div>`).join('');
+  const list=Array.isArray(photos)?photos:[];
+  return (subjects||[]).map(subject=>({subject,photos:list.filter(ph=>ph.subject===subject)})).filter(s=>s.photos.length).map((s,i)=>`<div class="constat-section" data-section-index="${i+1}"><div class="section-header"><h3 data-field="section_titre" data-section-index="${i+1}">${esc(s.subject)}</h3></div><div class="section-body"><div class="photo-grid cols-2">${s.photos.map(photoHtml).join('')}</div><div class="section-comment" data-field="synthese_section" data-section-index="${i+1}"></div><div class="expert-note" data-field="note_expertale" data-section-index="${i+1}"></div></div></div>`).join('');
+}
+function buildConstatHtml(data,logo=typeof CDL_LOGO==='string'?CDL_LOGO:''){
+  const type=REPORT_TYPES[data.type]?data.type:'autre',info=REPORT_TYPES[type],ep=type==='ep',ej=type==='ej';
+  const esc=reportEsc,text=reportText,image=reportImage,shortDate=reportShortDate,longDate=reportLongDate;
+  const dms=(value,pos,neg)=>{const t=Math.round(Math.abs(value)*3600);return `${Math.floor(t/3600)}°${String(Math.floor(t%3600/60)).padStart(2,'0')}'${String(t%60).padStart(2,'0')}" ${value<0?neg:pos}`;};
+  const p=data.position,gps=p&&Number.isFinite(p.lat)&&Number.isFinite(p.lng)?`${dms(p.lat,'N','S')} / ${dms(p.lng,'E','O')}${Number.isFinite(p.accuracy)?` (précision ±${Math.round(p.accuracy)} m)`:''}`:'';
+  const sections=reportPhotoSections(data.photos,data.subjects);
   const actions=(data.actions||[]).filter(a=>a&&(String(a.text||'').trim()||String(a.recipient||'').trim()));
   const actionsHtml=actions.length?`<div class="actions-block" data-field="actions"><div class="actions-header">${ep?'Suites recommandées':'Suites à donner / Actions'}</div><table class="actions-table"><thead><tr><th>Action</th><th>Description</th><th>Destinataire</th><th>Échéance</th></tr></thead><tbody>${actions.map((a,i)=>`<tr data-action-index="${i+1}"><td class="action-type" data-field="action_type">${esc(a.type)}</td><td data-field="action_text">${text(a.text)}</td><td data-field="action_recipient">${esc(a.recipient)}</td><td data-field="action_date">${a.date?shortDate(a.date):'—'}</td></tr>`).join('')}</tbody></table></div>`:'';
-  const presents=String(data.presents||'').split(/\r?\n/).map(line=>line.trim()).filter(Boolean);
+  const presents=reportLines(data.presents);
   const reference=esc(data.reference),visitDate=shortDate(data.visitDate),generated=longDate(data.generatedAt?new Date(data.generatedAt):new Date());
   const row=(label,field,value)=>`<tr><td>${label}</td><td data-field="${field}">${value}</td></tr>`;
   const refTable=ep?`<table class="ref-table"><tr><td colspan="2">Identification de la mission</td></tr>${row('Réf. CDL','ref_cdl',reference)}${row('Donneur d’ordre','client_nom',esc(data.clientName))}${row('Adresse client','client_adresse',text(data.clientAddress))}${row('Adresse du site','adresse_site',text(data.siteAddress))}${row('Objet de la mission','objet',esc(data.caseName))}${row('Date de visite','date_visite',visitDate)}${row('Mandataire','expert',esc(REPORT_EXPERT.name+' — CDL EXPERT'))}</table>`
@@ -121,4 +127,4 @@ body{font-family:'Source Sans 3','Source Sans Pro',Arial,sans-serif;font-size:13
 @media print{.page-shell{max-width:none;padding:0 10mm}.nominatif-block{border-color:#999;background:#fffdf0}@page{size:A4 portrait;margin:14mm}}
 @media (max-width:600px){.doc-header{grid-template-columns:1fr}.photo-grid.cols-2{grid-template-columns:1fr}.ref-table td:first-child{white-space:normal;width:40%}}
 `;
-if(typeof module!=='undefined')module.exports={buildConstatHtml,reportTypeOf,reportFileName,isOpalexeReference,REPORT_TYPES};
+if(typeof module!=='undefined')module.exports={buildConstatHtml,reportTypeOf,reportFileName,isOpalexeReference,REPORT_TYPES,REPORT_EXPERT,REPORT_CSS,reportEsc,reportText,reportImage,reportShortDate,reportLongDate,reportLines,reportPhotoSections};

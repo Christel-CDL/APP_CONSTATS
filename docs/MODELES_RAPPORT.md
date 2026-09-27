@@ -55,3 +55,28 @@ décochée est rendue **vide** et `hidden` : le texte exclu n'est pas écrit dan
 
 Synchronisation Airtable, dépôt automatique dans OneDrive et comptes multi-utilisateurs
 nécessitent un service côté serveur (jetons d'API non exposés au navigateur) : ils restent à réaliser.
+
+## Procès-verbaux d'expertise privée (réception, levée des réserves)
+
+En expertise privée, l'étape 1 propose « Document à produire » : rapport de constats, PV de réception
+ou PV de levée des réserves. Le PV est enregistré avec le constat (`pv` dans la sauvegarde) ; il est
+effacé si le constat quitte l'expertise privée, pour ne jamais conserver de données de parties en EJ.
+
+Structure reprise des PV de chantier : parties (entreprise, maître d'ouvrage), références contractuelles,
+ouvrage et prestations, adresse, date de visite, présents ; 1) réception avec / sans réserves et date
+d'effet (point de départ des garanties légales, art. 1792-6 C. civ.), période de travaux, déclarations
+OUI / NON ; 2) tableau des réserves (N°, localisation, désordre, délai ou date de levée, observations,
+n° de photos) ; 3) documents remis (DOE) ; 4) règlement du solde ; signatures ; annexe photographique.
+
+- « Créer une réserve par photo non citée » : localisation = sujet, désordre = description de la photo.
+- PV de levée : « Reprendre ce PV de réception » copie parties, références et réserves d'un constat
+  enregistré (le même dossier en premier) ; chaque réserve est ensuite constatée « Levée » (date du jour
+  de visite par défaut) ou « Non levée ». Le PV affiche le bilan des réserves levées.
+- Exports : HTML (même charte, imprimable A4) et Word modifiable. Fichiers
+  `[RÉF]_PV-RECEPTION_[date].html|.docx` et `[RÉF]_PV-LEVEE-RESERVES_[date].html|.docx`.
+
+Hooks : `entreprise_nom`, `entreprise_adresse`, `entreprise_rcs`, `entreprise_representant`, `moa_nom`,
+`moa_adresse`, `references`, `ouvrage`, `reception_choix`, `reception_date`, `declarations`,
+lignes `data-reserve-index` (`reserve_localisation`, `reserve_desordre`, `reserve_delai` ou `reserve_levee`,
+`reserve_observations`, `reserve_photos`), `doe`, `montant_total`, `montant_solde`, `signataire_moa`,
+`signataire_entreprise`.

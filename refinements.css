@@ -24,3 +24,8 @@
 .cdl-report{margin-top:24px;padding:18px;border:1px solid #cbdad4;border-radius:10px;background:#fafcfb}.cdl-report h3{margin-top:0}.cdl-fields{display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-bottom:12px}.cdl-fields label{display:grid;gap:6px;font-size:13px;font-weight:600}.cdl-fields .wide{grid-column:1/-1}.cdl-fields textarea{min-height:70px}.cdl-fields .check-label{display:flex}
 #dossier-client-note{font-weight:400;color:#5a4a10;line-height:1.4}
 @media(max-width:760px){.cdl-fields{grid-template-columns:1fr}}
+.pv-editor{margin-top:24px;padding:18px;border:1px solid #b9d0a4;border-radius:10px;background:#f7fbf2}.pv-editor h3{margin-top:0;color:#3a5a1a}.pv-editor fieldset{border:1px solid #d6e3cc;border-radius:8px;margin:0 0 16px;padding:12px 14px;background:white}.pv-editor legend{font-weight:700;padding:0 6px;color:#3a5a1a}
+.pv-rows{display:grid;gap:8px;margin:8px 0}.pv-row{display:flex;gap:8px;align-items:center}.pv-row input:not([type=checkbox]){flex:1}.pv-row select{width:110px}.pv-row input[type=checkbox]{width:22px;height:22px;flex-shrink:0}.pv-editor-label{font-weight:600;margin:6px 0 0}
+.pv-reserves{display:grid;gap:12px;margin:10px 0}.pv-reserve{border:1px solid #dce5e1;border-radius:8px;padding:12px;background:#fafcfb}.pv-reserve>b{display:block;margin-bottom:8px}.pv-buttons{display:flex;gap:10px;flex-wrap:wrap}
+.pv-import{background:#edf5f2;border-radius:8px;padding:12px;margin-bottom:16px}.pv-import p{margin:0 0 8px}.pv-import div{display:flex;gap:10px;flex-wrap:wrap}.pv-import select{flex:1;min-width:220px}
+@media(max-width:760px){.pv-editor{padding:12px}.pv-editor fieldset{padding:10px}.pv-row{flex-wrap:wrap}}

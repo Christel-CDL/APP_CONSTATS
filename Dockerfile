@@ -7,6 +7,8 @@ COPY index.html \
      drawing.js \
      export-actions.js \
      cdl-report.js \
+     pv-editor.js \
+     pv-report.js \
      html-report.js \
      report-logo.js \
      field-app.js \

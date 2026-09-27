@@ -16,10 +16,14 @@ node tests/reports.cjs
 node tests/edge-cases.cjs
 node tests/dossiers.cjs
 node tests/html-report.cjs
+node tests/pv-report.cjs
+node tests/pv.cjs
 ```
 
-`html-report.cjs` s'exécute sans navigateur ni serveur. `dossiers.cjs` couvre aussi le parcours expertise judiciaire (absence de données nominatives, export HTML).
+`html-report.cjs` et `pv-report.cjs` s'exécutent sans navigateur ni serveur. `dossiers.cjs` couvre aussi le parcours expertise judiciaire (absence de données nominatives, export HTML).
 
 `TEST_OUTPUT` permet de choisir le dossier des résultats. Chaque test navigateur ouvre un profil isolé et le mode `?verification=1`, avec une base IndexedDB distincte. Aucun brouillon utilisateur n'est utilisé. Les flux caméra/audio et la position sont simulés ; le stockage, les pistes médias, les enregistrements et les exports utilisent les API réelles du navigateur.
 
 Les tests couvrent le parcours complet, la reprise, les inclusions DOCX, les fichiers PDF, les rapports longs, le mode hors connexion et plusieurs protections contre les pertes de données. Le contrôle visuel Word et les permissions matérielles sur Safari iPad/Chrome Android restent manuels.
+
+`pv.cjs` enchaîne un PV de réception puis un PV de levée des réserves sur des données fictives.

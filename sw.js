@@ -1,7 +1,7 @@
 'use strict';
 const PREFIX='constat-shell-'+self.registration.scope;
-const CACHE=PREFIX+'v20260927-1';
-const ASSETS=['./','index.html','styles.css','refinements.css','field-app.js','report-logo.js','html-report.js','cdl-report.js','drawing.js','drafts.js','dossiers.js','visit-access.js','pdf-report.js','word-report.js','export-actions.js','offline.js','vendor/pdf-lib.min.js','vendor/docx.js'];
+const CACHE=PREFIX+'v20260927-2';
+const ASSETS=['./','index.html','styles.css','refinements.css','field-app.js','report-logo.js','html-report.js','cdl-report.js','pv-report.js','pv-editor.js','drawing.js','drafts.js','dossiers.js','visit-access.js','pdf-report.js','word-report.js','export-actions.js','offline.js','vendor/pdf-lib.min.js','vendor/docx.js'];
 const urls=ASSETS.map(path=>new URL(path,self.registration.scope).href);
 self.addEventListener('install',event=>event.waitUntil(caches.open(CACHE).then(cache=>cache.addAll(urls))));
 self.addEventListener('activate',event=>event.waitUntil((async()=>{
