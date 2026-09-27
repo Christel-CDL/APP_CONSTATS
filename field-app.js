@@ -37,16 +37,16 @@ function renderSubjects(){$('#subject-tabs').innerHTML=state.subjects.map((s,i)=
 $('#subject-tabs').addEventListener('click',e=>{const b=e.target.closest('[data-subject-index]');if(!b)return;state.activeSubject=state.subjects[Number(b.dataset.subjectIndex)];renderSubjects();renderCaptures();saveVisit();});
 $('#subject-form').addEventListener('submit',e=>{e.preventDefault();const name=addSubject($('#subject-name').value);if(!name)return;state.activeSubject=name;$('#subject-name').value='';renderSubjects();renderCaptures();saveVisit();tell(`Sujet sélectionné : ${name}. Les photos des autres sujets sont conservées dans le même constat.`);});
 function included(photo,field){return photo.include?.[field]!==false;}
-function audioMarkup(photo){return photo.audio?`<audio controls preload="metadata" src="${escapeHtml(photo.audio)}"></audio><a download="note-photo-${photo.number}.${photo.audio.includes('audio/mp4')?'m4a':photo.audio.includes('audio/ogg')?'ogg':'webm'}" href="${escapeHtml(photo.audio)}">Télécharger l’audio de la photo ${photo.number}</a>`:'<p class="muted">Aucun audio enregistré.</p>';}
+function audioMarkup(photo){return photo.audio?`<audio controls preload="metadata" src="${escapeHtml(photo.audio)}"></audio><a download="note-photo-${photo.number}.${photo.audio.includes('audio/mp4')?'m4a':photo.audio.includes('audio/ogg')?'ogg':'webm'}" href="${escapeHtml(photo.audio)}">Télécharger l’audio de la photo ${photo.number}</a>`:'<p class="muted">Aucun enregistrement sonore.</p>';}
 function transcriptStatus(photo){return photo.transcriptStatus||(photo.transcript?'Texte à relire.':'Aucune transcription. Vous pouvez saisir ou coller le texte ci-dessous.');}
 function renderCaptures(){
   const visible=state.photos.filter(p=>p.subject===state.activeSubject);
   $('#capture-list').innerHTML=visible.length?visible.map(photo=>`<article class="capture-card" data-photo-id="${photo.id}"><div class="photo-frame"><img src="${escapeHtml(photo.annotatedSrc||photo.src)}" alt="Photo ${photo.number}"><span>PHOTO ${photo.number}</span></div><div class="capture-fields">
   <label>Désordre ou lieu<input class="photo-subject-name" value="${escapeHtml(photo.subject)}" list="subject-options" maxlength="160"></label><button class="secondary subject-apply" data-command="subject">Valider le rattachement</button>
-  <label>Description<textarea data-edit="description">${escapeHtml(photo.description)}</textarea></label><label>Commentaires / observations<textarea data-edit="comment">${escapeHtml(photo.comment)}</textarea></label>
-  <div class="input-modes"><button class="secondary" data-command="annotate">Annoter la photo</button><button class="secondary" data-command="drawing">Écrire au stylet</button><button class="secondary" data-command="audio" ${recording?'disabled':''}>Enregistrer une note vocale</button></div>
+  <label>Description<textarea data-edit="description">${escapeHtml(photo.description)}</textarea></label><button type="button" class="expand-text" data-command="expand" data-field="description">⤢ Écrire en grand</button><label>Commentaires / observations<textarea data-edit="comment">${escapeHtml(photo.comment)}</textarea></label><button type="button" class="expand-text" data-command="expand" data-field="comment">⤢ Écrire en grand</button>
+  <div class="input-modes"><button class="secondary" data-command="annotate">Annoter la photo</button><button class="secondary" data-command="drawing">Écrire au stylet</button><button class="secondary" data-command="audio" ${recording?'disabled':''}>🎙 Dicter ou enregistrer un son</button></div>
   ${photo.drawing?`<figure class="handwriting"><figcaption>Note manuscrite — modifiable avec « Écrire au stylet »</figcaption><img src="${escapeHtml(photo.drawing)}" alt="Note manuscrite de la photo ${photo.number}"></figure>`:''}
-  <section class="audio-note"><strong>Note vocale</strong>${audioMarkup(photo)}<p class="transcript-status">${escapeHtml(transcriptStatus(photo))}</p><label>Transcription modifiable<textarea data-edit="transcript" placeholder="Texte reconnu pendant la dictée ou texte à saisir…">${escapeHtml(photo.transcript)}</textarea></label></section>
+  <section class="audio-note"><strong>Enregistrement sonore</strong>${audioMarkup(photo)}${photo.transcript?`<label>Transcription (ancienne note vocale)<textarea data-edit="transcript">${escapeHtml(photo.transcript)}</textarea></label>`:''}</section>
   <p class="photo-location">${locationLabel(photo)}</p><button class="secondary" data-command="locate">Associer la position actuelle à cette photo</button><button class="delete-photo" data-command="delete" ${recording?'disabled':''}>Supprimer la photo</button></div></article>`).join(''):'<div class="capture-empty"><h3>Aucune photo pour ce sujet</h3><p>Ouvrez l’appareil photo ou importez plusieurs photos.</p></div>';
   let list=$('#subject-options');if(!list){list=document.createElement('datalist');list.id='subject-options';document.body.append(list);}list.innerHTML=state.subjects.map(s=>`<option value="${escapeHtml(s)}">`).join('');
 }
@@ -57,7 +57,8 @@ $('#capture-list').addEventListener('click',async e=>{const b=e.target.closest('
     case 'subject':const subject=addSubject(b.closest('[data-photo-id]').querySelector('.photo-subject-name').value);if(subject){photo.subject=subject;state.activeSubject=subject;renderSubjects();renderCaptures();saveVisit();}break;
     case 'annotate':openDrawing(photo.id,'photo');break;
     case 'drawing':openDrawing(photo.id);break;
-    case 'audio':audioTarget=photo;$('#transcribe-audio').disabled=!speechClass;$('#transcribe-audio').checked=!!speechClass;$('#speech-help').textContent=speechClass?'La transcription dépend du navigateur et peut envoyer la voix à son service en ligne. Relisez le texte obtenu. Un ancien audio ne peut pas être transcrit ici.':'Ce navigateur ne propose pas la transcription vocale. Vous pourrez écouter l’audio et saisir le texte.';$('#audio-dialog').showModal();break;
+    case 'expand':openTextEditor(photo,b.dataset.field);break;
+    case 'audio':audioTarget=photo;$('#dictation-help').textContent=speechClass?'La dictée utilise la reconnaissance vocale du navigateur (souvent en ligne). Relisez le texte ajouté.':'Dictée indisponible dans ce navigateur : utilisez la touche micro du clavier dans le grand champ qui va s’ouvrir.';$('#audio-dialog').showModal();break;
     case 'locate':b.disabled=true;const position=await requestPosition();b.disabled=false;if(position){photo.position={...position,source:'manual'};renderCaptures();saveVisit();}else tell('Position indisponible. Vérifiez l’autorisation de localisation.');break;
     case 'delete':if(recording||!confirm(`Supprimer la photo ${photo.number} et ses notes ?`))return;state.photos=state.photos.filter(p=>p!==photo);renderSubjects();renderCaptures();saveVisit();break;
   }
@@ -84,41 +85,53 @@ $('#native-camera-button').addEventListener('click',()=>{closeCamera();$('#camer
 $('#take-photo').addEventListener('click',async()=>{const video=$('#camera-video');if(!video.videoWidth)return;$('#take-photo').disabled=true;pendingCapture=true;const c=document.createElement('canvas');c.width=video.videoWidth;c.height=video.videoHeight;c.getContext('2d').drawImage(video,0,0);const raw=c.toDataURL('image/jpeg',0.92),subject=state.activeSubject,time=new Date().toISOString(),positionPromise=Promise.resolve(recentPosition(15000));$('#camera-dialog').close();tell('Photo prise. Réduction de taille et recherche de sa position…');try{const src=await compressPhoto(raw),position=await positionPromise;addPhoto(src,subject,time,position?{...position,source:'capture'}:null,'camera');tell(position?'Photo allégée et position ajoutées. Vous pouvez prendre la suivante pour ce même sujet.':'Photo allégée ajoutée sans position : localisation indisponible.');}catch{tell('La photo n’a pas pu être ajoutée. Réessayez.');}finally{pendingCapture=false;}});
 $('#close-audio').addEventListener('click',()=>$('#audio-dialog').close());
 function refreshTranscript(photo){$$('[data-photo-id]').filter(c=>c.dataset.photoId===photo.id).forEach(c=>{const field=c.querySelector('[data-edit="transcript"]');if(field&&document.activeElement!==field)field.value=photo.transcript||'';const status=c.querySelector('.transcript-status');if(status)status.textContent=transcriptStatus(photo);});}
-function startRecognition(session){
-  if(!speechClass)return;const recognition=new speechClass();session.recognition=recognition;recognition.lang='fr-FR';recognition.continuous=true;recognition.interimResults=false;
-  const photo=session.photo;photo.transcriptStatus='Transcription en cours…';
-  recognition.onresult=e=>{for(let i=e.resultIndex;i<e.results.length;i++)if(e.results[i].isFinal)photo.transcript=[photo.transcript,e.results[i][0].transcript.trim()].filter(Boolean).join(' ');refreshTranscript(photo);saveVisit();};
-  recognition.onerror=e=>{session.speechError=true;photo.transcriptStatus=`Transcription interrompue (${e.error}). L’audio continue d’être enregistré ; complétez le texte après écoute.`;refreshTranscript(photo);saveVisit();};
-  recognition.onend=()=>{if(!session.speechError)photo.transcriptStatus=session.stopping?'Dictée terminée : relisez et complétez le texte.':'La reconnaissance s’est arrêtée ; l’audio continue. Complétez le texte après écoute.';refreshTranscript(photo);saveVisit();};
-  try{recognition.start();}catch{session.speechError=true;photo.transcriptStatus='Transcription indisponible. L’audio est enregistré ; saisissez le texte après écoute.';}
+// Deux usages distincts, jamais simultanés (sur iPad, dictée et enregistrement se disputent le micro et figeaient la page) :
+// « Dicter » ajoute le texte reconnu aux commentaires ; « Enregistrer un son » conserve un fichier audio (bruit, ambiance).
+const RECORD_LIMIT_MS=15*60*1000;
+function showRecordingBar(text){$('#recording-status').hidden=false;$('#recording-label').textContent=text;$('#recording-live').textContent='';}
+function hideRecordingBar(){$('#recording-status').hidden=true;clearInterval(recording?.timer);}
+function recordingClock(session,label){const start=Date.now();session.timer=setInterval(()=>{const s=Math.floor((Date.now()-start)/1000);$('#recording-label').textContent=`${label} — ${String(Math.floor(s/60)).padStart(2,'0')}:${String(s%60).padStart(2,'0')}`;if(Date.now()-start>RECORD_LIMIT_MS)stopRecording();},500);}
+function finishRecording(message){const session=recording;if(!session)return;clearInterval(session.timer);clearTimeout(session.safety);session.stream?.getTracks().forEach(t=>t.stop());recording=null;hideRecordingBar();renderCaptures();saveVisit();if(message)tell(message);}
+function startDictation(photo){
+  if(!speechClass){openTextEditor(photo,'comment',true);return;}
+  const session={kind:'dictation',photo,stopping:false,text:''};recording=session;showRecordingBar(`● Dictée — photo ${photo.number}`);recordingClock(session,`● Dictée — photo ${photo.number}`);renderCaptures();
+  const recognition=new speechClass();session.recognition=recognition;recognition.lang='fr-FR';recognition.continuous=true;recognition.interimResults=true;
+  recognition.onresult=e=>{let interim='';for(let i=e.resultIndex;i<e.results.length;i++){const text=e.results[i][0].transcript.trim();if(e.results[i].isFinal)session.text=[session.text,text].filter(Boolean).join(' ');else interim+=' '+text;}$('#recording-live').textContent=(session.text+' '+interim).trim();};
+  recognition.onerror=e=>{session.error=e.error;};
+  recognition.onend=()=>{if(recording!==session)return;const text=session.text.trim();
+    if(text){photo.comment=[photo.comment?.trim(),text].filter(Boolean).join('\n');photo.transcriptStatus='';}
+    finishRecording(text?`Dictée ajoutée aux commentaires de la photo ${photo.number}. Relisez-la.`:session.error?`Dictée interrompue (${session.error}). Utilisez la touche micro du clavier dans le champ Commentaires.`:'Aucun texte reconnu.');};
+  try{recognition.start();}catch{finishRecording('Dictée indisponible. Utilisez la touche micro du clavier dans le champ Commentaires.');}
 }
-$('#start-audio').addEventListener('click',async()=>{
-  if(recording||!audioTarget)return;const photo=audioTarget,transcribe=$('#transcribe-audio').checked;
-  if(photo.audio&&!confirm('Remplacer l’audio existant ? Le texte déjà saisi sera conservé.'))return;
-  const session={photo,stopping:false,stream:null,recorder:null};recording=session;$('#audio-dialog').close();$('#recording-status').hidden=false;$('#recording-status span').textContent='Autorisation du microphone…';renderCaptures();
+async function startSoundRecording(photo){
+  if(photo.audio&&!confirm('Remplacer l’enregistrement sonore existant de cette photo ?'))return;
+  const session={kind:'sound',photo,stopping:false,stream:null,recorder:null};recording=session;showRecordingBar('Autorisation du microphone…');renderCaptures();
   try{if(!navigator.mediaDevices?.getUserMedia||!window.MediaRecorder)throw new Error('unsupported');
-    const stream=await acquireVisitStream('audio');if(session.stopping){stream.getTracks().forEach(t=>t.stop());recording=null;$('#recording-status').hidden=true;renderCaptures();return;}session.stream=stream;
+    const stream=await acquireVisitStream('audio');session.stream=stream;if(session.stopping){finishRecording();return;}
     const recorder=new MediaRecorder(stream);session.recorder=recorder;const chunks=[];
     recorder.ondataavailable=e=>{if(e.data.size)chunks.push(e.data);};
-    recorder.onerror=()=>{photo.transcriptStatus='Erreur d’enregistrement. Vérifiez l’audio obtenu.';stopRecording();};
-    recorder.onstop=async()=>{session.stopping=true;stopRecognition(session);stream.getTracks().forEach(t=>t.stop());
-      try{const blob=new Blob(chunks,{type:recorder.mimeType||chunks[0]?.type||'audio/webm'});if(!blob.size)throw new Error('empty');photo.audio=await readBlob(blob);if(!photo.transcript)photo.transcriptStatus=transcribe?'Aucun texte reconnu. Écoutez l’audio puis saisissez ou collez sa transcription.':'Audio enregistré sans transcription. Saisissez le texte après écoute si nécessaire.';}
-      catch{tell('L’audio n’a pas pu être conservé. Réessayez l’enregistrement.');}
-      finally{recording=null;$('#recording-status').hidden=true;renderCaptures();saveVisit();}
-    };
-    recorder.start(1000);$('#recording-status span').textContent=`● Enregistrement de la photo ${photo.number} en cours`;
-    if(transcribe)startRecognition(session);else photo.transcriptStatus='Enregistrement audio seul, sans transcription automatique.';refreshTranscript(photo);
-  }catch{session.stream?.getTracks().forEach(t=>t.stop());recording=null;$('#recording-status').hidden=true;renderCaptures();tell('Microphone indisponible ou autorisation refusée. Vérifiez les permissions du navigateur.');}
-});
-function stopRecognition(session){try{session.recognition?.stop();}catch{}}
-function stopRecording(){if(!recording)return;recording.stopping=true;stopRecognition(recording);if(recording.recorder?.state==='recording')recording.recorder.stop();$('#recording-status span').textContent='Finalisation de la note…';}
+    recorder.onerror=()=>stopRecording();
+    recorder.onstop=async()=>{if(recording!==session)return;
+      try{const blob=new Blob(chunks,{type:recorder.mimeType||chunks[0]?.type||'audio/webm'});if(!blob.size)throw new Error('empty');photo.audio=await readBlob(blob);finishRecording(`Enregistrement sonore conservé pour la photo ${photo.number}.`);}
+      catch{finishRecording('L’enregistrement n’a pas pu être conservé. Réessayez.');}};
+    recorder.start(1000);recordingClock(session,`● Enregistrement sonore — photo ${photo.number}`);
+  }catch{finishRecording('Microphone indisponible ou autorisation refusée. Vérifiez les réglages du navigateur (Réglages → Safari/Chrome → Microphone).');}
+}
+$('#start-dictation').addEventListener('click',()=>{const photo=audioTarget;$('#audio-dialog').close();if(!recording&&photo)startDictation(photo);});
+$('#start-sound').addEventListener('click',()=>{const photo=audioTarget;$('#audio-dialog').close();if(!recording&&photo)startSoundRecording(photo);});
+// Arrêt toujours possible : si le navigateur ne rend pas la main en 4 s, l'arrêt est forcé (pas de page figée).
+function stopRecording(){const session=recording;if(!session||session.stopping)return;session.stopping=true;$('#recording-label').textContent='Finalisation…';
+  try{if(session.kind==='dictation')session.recognition?.stop();else if(session.recorder?.state==='recording')session.recorder.stop();else finishRecording();}catch{finishRecording();}
+  session.safety=setTimeout(()=>{if(recording!==session)return;try{session.recognition?.abort();}catch{}
+    if(session.kind==='dictation'&&session.text.trim()){session.photo.comment=[session.photo.comment?.trim(),session.text.trim()].filter(Boolean).join('\n');}
+    finishRecording('Arrêt forcé : le navigateur ne répondait plus. Le texte ou le son déjà capté a été conservé si possible.');},4000);}
 $('#stop-recording').addEventListener('click',stopRecording);
 function addAction(values={}){const row=$('#action-template').content.firstElementChild.cloneNode(true);row.querySelector('select').value=values.type||'Créer une tâche';row.querySelector('.action-text').value=values.text||'';row.querySelector('.action-recipient').value=values.recipient||'';row.querySelector('[type="date"]').value=values.date||'';row.querySelector('.remove-action').addEventListener('click',()=>{row.remove();saveVisit();});row.addEventListener('input',saveVisit);$('#action-list').append(row);}
 $('#add-action').addEventListener('click',()=>{addAction();saveVisit();});
 function collectActions(){return $$('.action-row').map(row=>({type:row.querySelector('select').value,text:row.querySelector('.action-text').value,recipient:row.querySelector('.action-recipient').value,date:row.querySelector('[type="date"]').value}));}
 function checkField(photo,field,label,body){return `<section class="review-field"><label class="check-label"><input type="checkbox" data-include="${field}" ${included(photo,field)?'checked':''}> Inclure ${label} dans l’export</label>${body}</section>`;}
 function buildReportPreview(){
-  $('#summary-editor').innerHTML=state.photos.map(p=>`<article class="summary-card" data-photo-id="${p.id}"><h3>Photo ${p.number} — ${escapeHtml(p.subject)}</h3>${checkField(p,'description','la description',`<label>Description<textarea data-edit="description">${escapeHtml(p.description)}</textarea></label>`)}${checkField(p,'comment','les commentaires',`<label>Commentaires modifiables<textarea data-edit="comment">${escapeHtml(p.comment)}</textarea></label>`)}${checkField(p,'transcript','la transcription',`<p class="transcript-status">${escapeHtml(transcriptStatus(p))}</p><label>Transcription modifiable<textarea data-edit="transcript">${escapeHtml(p.transcript)}</textarea></label>`)}${p.drawing?checkField(p,'drawing','la note manuscrite',`<img class="handwriting-preview" src="${escapeHtml(p.drawing)}" alt="Note manuscrite">`):''}<section class="audio-note"><strong>Audio de la photo ${p.number} — écoute et téléchargement séparé</strong>${audioMarkup(p)}</section></article>`).join('');
+  $('#summary-editor').innerHTML=state.photos.map(p=>`<article class="summary-card" data-photo-id="${p.id}"><h3>Photo ${p.number} — ${escapeHtml(p.subject)}</h3>${checkField(p,'description','la description',`<label>Description<textarea data-edit="description">${escapeHtml(p.description)}</textarea></label><button type="button" class="expand-text" data-field="description">⤢ Écrire en grand</button>`)}${checkField(p,'comment','les commentaires',`<label>Commentaires modifiables<textarea data-edit="comment">${escapeHtml(p.comment)}</textarea></label><button type="button" class="expand-text" data-field="comment">⤢ Écrire en grand</button>`)}${checkField(p,'transcript','la transcription',`<p class="transcript-status">${escapeHtml(transcriptStatus(p))}</p><label>Transcription modifiable<textarea data-edit="transcript">${escapeHtml(p.transcript)}</textarea></label>`)}${p.drawing?checkField(p,'drawing','la note manuscrite',`<img class="handwriting-preview" src="${escapeHtml(p.drawing)}" alt="Note manuscrite">`):''}<section class="audio-note"><strong>Audio de la photo ${p.number} — écoute et téléchargement séparé</strong>${audioMarkup(p)}</section></article>`).join('');
   updateReportContent();renderMap();
 }
 $('#summary-editor').addEventListener('input',e=>{const card=e.target.closest('[data-photo-id]');if(!card)return;const photo=state.photos.find(p=>p.id===card.dataset.photoId);if(e.target.dataset.edit)photo[e.target.dataset.edit]=e.target.value;if(e.target.dataset.include){photo.include||={};photo.include[e.target.dataset.include]=e.target.checked;}updateReportContent();saveVisit();});
@@ -154,3 +167,13 @@ $('#backup-input').addEventListener('change',async e=>{const file=e.target.files
 window.addEventListener('beforeunload',e=>{if(unsaved||recording||pendingImports||pendingCapture){e.preventDefault();e.returnValue='';}});
 document.addEventListener('visibilitychange',()=>{if(document.hidden&&unsaved)persistVisit();});
 async function initialize(){if(PROFILE.pending)return;document.body.classList.add('loading-visit');await LEGACY_IMPORT;let saved,restored=false;try{saved=await dbRead();if(!saved){const legacy=localStorage.getItem(STORAGE_KEY);if(legacy)saved=JSON.parse(legacy);}if(saved){restoreState(saved);restored=true;updateSaveState('✓ Visite restaurée sur cet appareil');}}catch{updateSaveState('La sauvegarde n’a pas pu être lue. Conservez votre ancienne version.',true);}finally{if(!$('.action-row'))addAction();renderSubjects();renderCaptures();showPosition();ready=true;renderCaseDetails();document.body.classList.remove('loading-visit');if(restored)saveVisit();renderDrafts();}}
+
+// Grand cadre d'écriture (stylet, clavier ou dictée du clavier) pour la description et les commentaires.
+const TEXT_LABELS={description:'Description',comment:'Commentaires / observations',transcript:'Transcription'};let textTarget=null;
+function openTextEditor(photo,field,dictationFallback=false){textTarget={photo,field};$('#text-dialog-title').textContent=`${TEXT_LABELS[field]} — photo ${photo.number}`;const area=$('#text-dialog-field');area.value=photo[field]||'';
+  $('.text-dialog-help').textContent=dictationFallback?'Dictée intégrée indisponible dans ce navigateur : touchez la touche micro du clavier pour dicter, puis Valider.':'Écrivez au stylet directement dans le cadre (Apple Pencil : écriture manuscrite convertie en texte), au clavier, ou avec la touche micro du clavier.';
+  $('#text-dialog').showModal();area.focus();area.setSelectionRange(area.value.length,area.value.length);}
+$('#save-text').addEventListener('click',()=>{if(!textTarget)return;textTarget.photo[textTarget.field]=$('#text-dialog-field').value;$('#text-dialog').close();renderCaptures();if(state.currentStep===4)buildReportPreview();saveVisit();});
+for(const id of ['#cancel-text','#close-text'])$(id).addEventListener('click',()=>$('#text-dialog').close());
+$('#text-dialog').addEventListener('close',()=>{textTarget=null;});
+$('#summary-editor').addEventListener('click',e=>{const b=e.target.closest('.expand-text');if(!b)return;const photo=state.photos.find(p=>p.id===b.closest('[data-photo-id]').dataset.photoId);if(photo)openTextEditor(photo,b.dataset.field);});

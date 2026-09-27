@@ -15,6 +15,8 @@ fs.mkdirSync(out,{recursive:true});
     page.on('pageerror',e=>{errors.push(e.message);console.error('PAGE ERROR',e.message);});
     page.on('dialog',dialog=>dialog.accept());page.on('console',msg=>{if(msg.type()==='warning')console.log('WARN',msg.text());});
     await page.addInitScript(()=>{
+      // Reconnaissance vocale simulée ; window.speechHang simule un navigateur qui ne rend plus la main (iPad).
+      window.SpeechRecognition=class{start(){this.t=setTimeout(()=>this.onresult?.({resultIndex:0,results:[Object.assign([{transcript:'fissure horizontale en pied de mur'}],{isFinal:true})]}),200);}stop(){clearTimeout(this.t);if(!window.speechHang)setTimeout(()=>this.onend?.(),50);}abort(){}};
       window.mediaRequests=0;if(!navigator.mediaDevices)return;
       // Synthetic sources exercise actual browser tracks/recording without physical devices.
       navigator.mediaDevices.getUserMedia=async options=>{
@@ -50,9 +52,27 @@ fs.mkdirSync(out,{recursive:true});
     await page.locator('#drawing-eraser').click();await page.mouse.move(rect.x+60,rect.y+70);await page.mouse.down();await page.mouse.move(rect.x+155,rect.y+70,{steps:15});await page.mouse.up();
     assert.notEqual(await page.evaluate(()=>canvas.toDataURL()),painted,'Eraser changes pixels');
     await page.locator('#save-drawing').click();
-    await page.locator('[data-command="audio"]').first().click();await page.locator('#transcribe-audio').uncheck({force:true}).catch(()=>{});
-    await page.locator('#start-audio').click();await page.waitForFunction(()=>recording?.recorder?.state==='recording');
+    // Enregistrement sonore seul (fichier audio), barre d'arrêt fixe et visible
+    await page.locator('[data-command="audio"]').first().click();
+    const dialogBox=await page.locator('#audio-dialog').boundingBox();assert.ok(dialogBox.y+dialogBox.height<=900,'Boîte de note vocale contenue dans l’écran');
+    await page.locator('#start-sound').click();await page.waitForFunction(()=>recording?.recorder?.state==='recording');
+    assert.ok(await page.locator('#stop-recording').isVisible());assert.equal(await page.locator('#recording-status').evaluate(e=>getComputedStyle(e).position),'fixed');
     await page.waitForTimeout(1200);await page.locator('#stop-recording').click();await page.waitForFunction(()=>!recording&&!!state.photos[0].audio);
+    assert.equal(await page.evaluate(()=>state.photos[0].comment||''),'','Enregistrement sonore : aucun texte ajouté');
+    // Dictée : texte ajouté aux commentaires, sans enregistrement audio
+    await page.locator('[data-command="audio"]').first().click();await page.locator('#start-dictation').click();
+    await page.waitForFunction(()=>/fissure horizontale/.test($('#recording-live').textContent));await page.locator('#stop-recording').click();
+    await page.waitForFunction(()=>!recording&&/fissure horizontale en pied de mur/.test(state.photos[0].comment));
+    // Navigateur qui ne répond plus : arrêt forcé en 4 s, texte déjà reconnu conservé, page utilisable
+    await page.evaluate(()=>{window.speechHang=true;state.photos[1].comment='';});
+    await page.locator('[data-command="audio"]').nth(1).click();await page.locator('#start-dictation').click();
+    await page.waitForFunction(()=>/fissure/.test($('#recording-live').textContent));await page.locator('#stop-recording').click();
+    await page.waitForFunction(()=>!recording,null,{timeout:8000});assert.match(await page.evaluate(()=>state.photos[1].comment),/fissure horizontale/);assert.ok(await page.locator('#recording-status').isHidden());
+    await page.evaluate(()=>{window.speechHang=false;state.photos[0].comment='';state.photos[1].comment='';renderCaptures();});
+    // Grand cadre d'écriture
+    await page.locator('[data-command="expand"][data-field="description"]').first().click();assert.ok((await page.locator('#text-dialog-field').boundingBox()).height>=400,'Cadre d’écriture agrandi');
+    await page.locator('#text-dialog-field').fill('Écrit dans le grand cadre');await page.locator('#save-text').click();
+    assert.equal(await page.evaluate(()=>state.photos[0].description),'Écrit dans le grand cadre');
     assert.equal(await page.evaluate(()=>window.mediaRequests),1,'Audio reuses prepared microphone');
     await page.locator('[data-edit="description"]').first().fill('Description conservée');
     await page.locator('[data-edit="comment"]').first().fill('COMMENTAIRE_CONFIDENTIEL');
@@ -84,7 +104,7 @@ fs.mkdirSync(out,{recursive:true});
     await page.setViewportSize({width:390,height:844});await page.waitForTimeout(400);await page.evaluate(()=>scrollTo(0,0));await page.screenshot({path:path.join(out,'mobile.png')});
     assert.ok(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),'Mobile layout fits screen');
     assert.deepEqual(errors,[],'No browser JS errors');
-    console.log('PASS: startup, shared permissions, capture GPS, import without GPS, eraser, audio, draft restore, DOCX/PDF downloads, offline reload/export, no JS errors');
+    console.log('PASS: startup, shared permissions, capture GPS, import without GPS, eraser, audio, draft restore, DOCX/PDF downloads, offline reload/export, sound recording vs dictation to comments, forced stop, large writing box, no JS errors');
     await context.close();
   }finally{await browser.close();}
 })().catch(e=>{console.error(e);process.exitCode=1;});
