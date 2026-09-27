@@ -9,7 +9,12 @@
     // Stockage persistant : le navigateur n'efface pas les constats de l'appareil en cas de manque d'espace.
     try{if(navigator.storage?.persist&&!(await navigator.storage.persisted()))await navigator.storage.persist();}catch{}
     window.addEventListener('online',()=>describe(true));window.addEventListener('offline',()=>describe(true));
-    const update=()=>{if(registration.waiting)status.textContent+=' Une mise à jour sera chargée après fermeture de tous les onglets de cette application.';};
-    update();registration.addEventListener('updatefound',()=>registration.installing?.addEventListener('statechange',update));
+    // Nouvelle version : rechargement automatique si aucune saisie n'est en cours, sinon proposition de recharger.
+    let reloading=false;registration.update().catch(()=>{});
+    navigator.serviceWorker.addEventListener('controllerchange',()=>{if(reloading)return;
+      const busy=typeof unsaved!=='undefined'&&(unsaved||(typeof visitBusy==='function'&&visitBusy()));
+      if(!busy){reloading=true;location.reload();return;}
+      status.innerHTML='Nouvelle version disponible. <button type="button" class="secondary" id="reload-app">Recharger maintenant</button> (vos saisies sont enregistrées)';
+      document.querySelector('#reload-app')?.addEventListener('click',async()=>{if(typeof persistVisit==='function')await persistVisit();reloading=true;location.reload();});});
   }catch{status.textContent='Mode hors connexion non préparé. Gardez une connexion et sauvegardez vos visites dans un fichier.';}
 })();
