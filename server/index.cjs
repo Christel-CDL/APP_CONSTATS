@@ -118,7 +118,7 @@ const CONSTAT_STATUS=new Set(['Brouillon','Finalisé','Rapport envoyé']);
 let storeReady=false;
 {let mounted=false;try{fs.mkdirSync(path.join(DATA_DIR,'fichiers'),{recursive:true});fs.mkdirSync(path.join(DATA_DIR,'constats'),{recursive:true});fs.accessSync(DATA_DIR,fs.constants.W_OK);storeReady=true;}catch{}
   try{mounted=fs.readFileSync('/proc/mounts','utf8').split('\n').some(line=>line.split(' ')[1]===DATA_DIR);}catch{}
-  console.log(`  DATA_DIR : ${DATA_DIR} — ${storeReady?'accessible':'NON ACCESSIBLE : sauvegarde serveur désactivée'}${storeReady&&!mounted&&!env.DATA_DIR?' — ATTENTION : aucun volume monté, les constats seraient perdus au prochain déploiement':''}`);}
+  console.log(`  DATA_DIR : ${DATA_DIR} — ${storeReady?'accessible':'NON ACCESSIBLE : sauvegarde serveur désactivée'}${storeReady?(mounted?' — volume Docker monté (données conservées aux redéploiements)':' — ATTENTION : aucun volume Docker monté sur ce dossier, les constats seraient perdus au prochain déploiement'):''}`);}
 const safeId=id=>String(id).replace(/[^\w-]/g,'');
 const blobPath=(userId,hash)=>path.join(DATA_DIR,'fichiers',safeId(userId),hash);
 const constatPath=(userId,draftId)=>path.join(DATA_DIR,'constats',safeId(userId),draftId+'.json');
