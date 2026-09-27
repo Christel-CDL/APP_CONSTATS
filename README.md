@@ -25,7 +25,7 @@ Les brouillons et les dossiers sont sauvegardés localement dans le navigateur, 
 
 ## Modèles de rapport CDL EXPERT (27 septembre 2026)
 
-Rapport HTML autonome au modèle Expertise judiciaire, Expertise privée ou Constat, selon le type du dossier. En expertise judiciaire, aucune donnée nominative (parties, juridiction, n° RG) n'est saisie ni conservée : le bloc nominatif du rapport est laissé vide et complété après génération. Voir [les modèles de rapport](docs/MODELES_RAPPORT.md).
+Rapport HTML autonome au modèle Expertise judiciaire, Expertise privée ou Constat, selon le type du dossier. En expertise judiciaire, aucune donnée nominative (parties, juridiction, n° RG) n'est saisie ni conservée : le bloc nominatif du rapport est laissé vide et complété après génération. En expertise privée, l'application produit aussi le procès-verbal de réception et le procès-verbal de levée des réserves (HTML et Word), la levée reprenant les réserves du PV de réception. Voir [les modèles de rapport](docs/MODELES_RAPPORT.md).
 
 ## Version stabilisée du 24 septembre 2026
 

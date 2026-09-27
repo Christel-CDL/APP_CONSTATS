@@ -1,14 +1,14 @@
 'use strict';
 // Browser/Node builder. Local library, embedded images, editable Word text.
-async function buildConstatWord(data, library=globalThis.docx){
-  const {Document,Paragraph,TextRun,ImageRun,Table,TableRow,TableCell,Packer,WidthType,AlignmentType,Footer,PageNumber}=library;
+// Photos groupées par sujet, deux par ligne ; réutilisé par les procès-verbaux (pv-report.js).
+function wordPhotoBlocks(data,library=globalThis.docx){
+  const {Paragraph,TextRun,ImageRun,Table,TableRow,TableCell,WidthType,AlignmentType}=library;
   const paragraph=(text,options={})=>new Paragraph({spacing:{after:100},...options,children:[new TextRun({text:String(text??''),font:'Arial',size:24,bold:!!options.bold})]});
   const image=(src,w,h,maxW=230,maxH=120)=>{
     const ratio=Math.min(maxW/(w||maxW),maxH/(h||maxH));
     return new Paragraph({alignment:AlignmentType.CENTER,children:[new ImageRun({data:src,type:src.startsWith('data:image/png')?'png':'jpg',transformation:{width:Math.round((w||maxW)*ratio),height:Math.round((h||maxH)*ratio)}})]});
   };
-  const children=[paragraph('Reportage photographique commenté',{bold:true}),paragraph(data.heading),paragraph(data.date)];
-  let rows=0;
+  const children=[];let rows=0;
   for(const subject of data.subjects){
     const photos=data.photos.filter(p=>p.subject===subject);
     for(let i=0;i<photos.length;i+=2){
@@ -31,9 +31,15 @@ async function buildConstatWord(data, library=globalThis.docx){
       children.push(paragraph(''));rows++;
     }
   }
+  return children;
+}
+async function buildConstatWord(data, library=globalThis.docx){
+  const {Document,Paragraph,TextRun,Packer,AlignmentType,Footer,PageNumber}=library;
+  const paragraph=(text,options={})=>new Paragraph({spacing:{after:100},...options,children:[new TextRun({text:String(text??''),font:'Arial',size:24,bold:!!options.bold})]});
+  const children=[paragraph('Reportage photographique commenté',{bold:true}),paragraph(data.heading),paragraph(data.date),...wordPhotoBlocks(data,library)];
   const actions=(data.actions||[]).filter(a=>a.text?.trim()||a.recipient?.trim());
   if(actions.length){children.push(paragraph('Suites à donner',{bold:true,keepNext:true}));for(const a of actions)children.push(paragraph(`${a.type} — ${a.text}${a.recipient?' · Destinataire : '+a.recipient:''}${a.date?' · Échéance : '+a.date:''}`));}
   const doc=new Document({creator:'Constat',title:'Reportage photographique',styles:{default:{document:{run:{font:'Arial',size:24},paragraph:{spacing:{after:100}}}}},sections:[{properties:{page:{size:{width:11906,height:16838},margin:{top:1020,bottom:1020,left:1020,right:1020}}},footers:{default:new Footer({children:[new Paragraph({alignment:AlignmentType.RIGHT,children:[new TextRun({children:[PageNumber.CURRENT,' / ',PageNumber.TOTAL_PAGES],font:'Arial',size:20})]})]})},children}]});
   return Packer.toBlob(doc);
 }
-if(typeof module!=='undefined')module.exports={buildConstatWord};
+if(typeof module!=='undefined')module.exports={buildConstatWord,wordPhotoBlocks};
