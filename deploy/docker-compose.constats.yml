@@ -13,7 +13,7 @@ services:
     image: ghcr.io/christel-cdl/app-constats:latest
     restart: always
     environment:
-      APP_URL: ${APP_URL}                      # ex. https://constats.srv1102696.hstgr.cloud
+      APP_URL: ${APP_URL}                      # https://app.expertform.fr
       SESSION_SECRET: ${SESSION_SECRET}        # 64 caractères aléatoires, ne jamais changer sans raison
       AIRTABLE_TOKEN: ${AIRTABLE_TOKEN}        # jeton personnel Airtable, base CONSTATS uniquement
       AIRTABLE_BASE_ID: ${AIRTABLE_BASE_ID}
@@ -29,7 +29,8 @@ services:
     labels:
       - "traefik.enable=true"
       - "traefik.docker.network=root_default"
-      - "traefik.http.routers.constats-app.rule=Host(`constats.srv1102696.hstgr.cloud`)"
+      # app.expertform.fr (adresse définitive) ; l'ancienne adresse reste servie pendant la transition.
+      - "traefik.http.routers.constats-app.rule=Host(`app.expertform.fr`) || Host(`constats.srv1102696.hstgr.cloud`)"
       - "traefik.http.routers.constats-app.entrypoints=web,websecure"
       - "traefik.http.routers.constats-app.tls=true"
       - "traefik.http.routers.constats-app.tls.certresolver=mytlschallenge"
