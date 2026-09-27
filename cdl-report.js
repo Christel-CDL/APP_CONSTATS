@@ -19,6 +19,7 @@ function renderReportFields(){
   $('#export-html').textContent=doc!=='constat'?`${PV_DOCUMENTS[doc].label} (HTML)`:'Rapport HTML (modèle CDL)';
   $('#cdl-report-filename').textContent=doc!=='constat'?pvFileName(doc,state.caseReference,state.visitDate):reportFileName(state.caseReference,state.visitDate);
   if(typeof renderPvEditor==='function')renderPvEditor();
+  if(typeof renderAttendance==='function'){renderAttendance();renderCloseStatus();}
 }
 function setCaseType(type){state.caseType=REPORT_TYPES[type]?type:'autre';if(state.caseType!=='ep')state.pv=defaultPv();for(const key of REPORT_TEXT_FIELDS)state[key]=reportFieldValue(key);renderReportFields();saveVisit();}
 $('#case-type').addEventListener('change',e=>{const dossier=dossierById(state.dossierId);
@@ -37,20 +38,21 @@ $('#export-html').addEventListener('click',()=>{
   if(state.caseType==='ej'&&!isOpalexeReference(state.caseReference)&&!confirm('La référence ne suit pas le format OPALEXE (ex. EJ26-1402). Elle sert de clé pour compléter le bloc nominatif. Générer quand même ?'))return;
   if(state.expertSigns&&!state.expertSignature){alert('Vous avez coché votre signature d’expert : signez, ou décochez la case, avant l’export.');return;}
   const simple=state.caseType==='ep'&&state.pv.document==='simple';
-  const html=buildConstatHtml({simple,expertSignature:state.expertSigns?state.expertSignature:null,type:state.caseType,reference:state.caseReference,caseName:state.caseName,visitDate:state.visitDate,photos:state.photos,subjects:state.subjects,actions:collectActions(),position:state.position,hideNominatif:state.hideNominatif,...Object.fromEntries(REPORT_TEXT_FIELDS.map(key=>[key,reportFieldValue(key)]))});
+  const html=buildConstatHtml({simple,expertSignature:state.expertSigns?state.expertSignature:null,type:state.caseType,reference:state.caseReference,caseName:state.caseName,visitDate:state.visitDate,photos:state.photos,subjects:state.subjects,actions:collectActions(),position:state.position,hideNominatif:state.hideNominatif,attendance:state.attendance,...Object.fromEntries(REPORT_TEXT_FIELDS.map(key=>[key,reportFieldValue(key)]))});
   download(new Blob([html],{type:'text/html;charset=utf-8'}),simple?pvFileName('simple',state.caseReference,state.visitDate):reportFileName(state.caseReference,state.visitDate));if(state.caseType==='ep')markTransferred();
   $('.toast').textContent=state.caseType==='ej'?'Rapport HTML téléchargé — bloc nominatif à compléter hors application.':'Rapport HTML téléchargé.';$('.toast').classList.add('show');setTimeout(()=>$('.toast').classList.remove('show'),4500);
 });
 function pvReady(pv){if(!pv.companyName.trim()||!pv.ownerName.trim()){alert('Renseignez l’entreprise et le maître d’ouvrage du procès-verbal.');return false;}
   const stale=staleSignatures(pv);if(stale.length){alert(`Le procès-verbal a été modifié après la signature (${stale.join(', ')}). Faites signer à nouveau, ou effacez ces signatures, avant l’export.`);return false;}
   if(state.expertSigns&&!state.expertSignature){alert('Vous avez coché votre signature d’expert : signez, ou décochez la case, avant l’export.');return false;}return true;}
-function pvReportData(){return {expertSignature:state.expertSigns?state.expertSignature:null,reference:state.caseReference,caseName:state.caseName,visitDate:state.visitDate,siteAddress:state.siteAddress,presents:state.presents,photos:state.photos,subjects:state.subjects,pv:state.pv};}
+function pvReportData(){return {expertSignature:state.expertSigns?state.expertSignature:null,reference:state.caseReference,caseName:state.caseName,visitDate:state.visitDate,siteAddress:state.siteAddress,presents:state.presents,attendance:state.attendance,photos:state.photos,subjects:state.subjects,pv:state.pv};}
 $('#export-pv-word').addEventListener('click',async()=>{
   if(visitBusy()){alert('Terminez la capture avant de créer le procès-verbal.');return;}
   const pv=state.pv;if(!pvReady(pv))return;
   const button=$('#export-pv-word');button.disabled=true;
   try{const photos=structuredClone(state.photos);for(const p of photos){const image=await loadDrawingImage(p.annotatedSrc||p.src);p.imageWidth=image.naturalWidth;p.imageHeight=image.naturalHeight;if(p.drawing){const note=await loadDrawingImage(p.drawing);p.noteWidth=note.naturalWidth;p.noteHeight=note.naturalHeight;}}
-    download(await buildPvWord({...pvReportData(),photos}),pvFileName(pv.document,state.caseReference,state.visitDate).replace(/\.html$/,'.docx'));markTransferred();
+    const attendance=[];for(const src of state.attendance||[]){const image=await loadDrawingImage(src);attendance.push({src,width:image.naturalWidth,height:image.naturalHeight});}
+    download(await buildPvWord({...pvReportData(),photos,attendance}),pvFileName(pv.document,state.caseReference,state.visitDate).replace(/\.html$/,'.docx'));markTransferred();
     $('.toast').textContent=PV_DOCUMENTS[pv.document].label+' téléchargé (Word).';$('.toast').classList.add('show');setTimeout(()=>$('.toast').classList.remove('show'),4500);
   }catch(error){console.error(error);alert('Le procès-verbal Word n’a pas pu être créé. Vérifiez les photos et réessayez.');}finally{button.disabled=false;}
 });

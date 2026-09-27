@@ -45,3 +45,14 @@ dialog{max-height:calc(100dvh - 24px);max-width:calc(100vw - 16px);overflow:auto
 .capture-fields textarea:focus,.summary-card textarea:focus{min-height:180px}
 .expand-text{justify-self:start;border:1px solid #d8e0dd;background:#fff;border-radius:8px;padding:8px 12px;font:600 13px Arial;color:#28665d;cursor:pointer;margin:-4px 0 6px}
 #text-dialog{width:calc(100vw - 24px);max-width:1000px}#text-dialog-field{display:block;width:calc(100% - 32px);margin:12px 16px;min-height:55dvh;font:20px/1.5 Arial;padding:16px}.text-dialog-help{margin:0 16px 8px}
+/* Feuille de présence photographiée */
+.attendance{border:1px dashed #b9c4cf;border-radius:10px;padding:12px}.attendance .muted{margin:4px 0 8px}
+.attendance-list{display:flex;flex-wrap:wrap;gap:10px}.attendance-thumb{margin:0;width:120px}.attendance-thumb img{width:120px;height:160px;object-fit:cover;border:1px solid #c8d0da;border-radius:6px;display:block}
+.attendance-thumb figcaption{display:flex;justify-content:space-between;align-items:center;font-size:.8rem}.attendance-buttons{display:flex;flex-wrap:wrap;gap:8px;margin-top:8px}
+/* Fin de constat et brouillons terminés */
+.close-visit{margin-top:18px;padding:14px;border:1px solid #cfe0c3;border-radius:10px;background:#f6faf2}
+.draft-section{margin:28px 0 4px;font-size:1.1rem}.draft-section-note{margin:0 0 12px}.draft-card.closed{opacity:.9;background:#f7f8fa}
+.draft-buttons{display:flex;flex-direction:column;gap:8px}.draft-export{font-size:.85rem;color:#3d4b5e}.draft-export.warn{color:#b3261e}
+/* Envoi du fichier exporté (feuille de partage : OneDrive, e-mail, Fichiers) */
+.share-bar{position:fixed;left:12px;right:12px;bottom:calc(12px + env(safe-area-inset-bottom));z-index:60;display:flex;flex-wrap:wrap;align-items:center;gap:10px;justify-content:space-between;background:#1a3a5c;color:#fff;border-radius:12px;padding:12px 14px;box-shadow:0 6px 24px rgba(0,0,0,.25)}
+.share-bar[hidden]{display:none}.share-bar p{margin:0;flex:1 1 220px;font-size:.9rem}.share-bar div{display:flex;gap:8px}.share-bar .secondary{min-width:44px}

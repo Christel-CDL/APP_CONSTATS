@@ -47,6 +47,7 @@ function signedAt(value){const d=new Date(value);return Number.isNaN(d.getTime()
 function pvFileName(document,reference,date){const base=reportFileName(reference,date);return PV_DOCUMENTS[document]?.file?base.replace('_CONSTAT_',`_${PV_DOCUMENTS[document].file}_`).replace(/^CONSTAT_/,`${PV_DOCUMENTS[document].file}_`):base;}
 function pvSummary(pv){const total=pv.reserves.length,lifted=pv.reserves.filter(r=>r.status==='levee').length;return {total,lifted,remaining:total-lifted};}
 function buildPvHtml(data,logo=typeof CDL_LOGO==='string'?CDL_LOGO:''){
+  const attendance=reportAttendance(data.attendance);
   const pv=normalizePv(data.pv),levee=pv.document==='levee',info=PV_DOCUMENTS[levee?'levee':'reception'];
   const esc=reportEsc,text=reportText,date=reportShortDate,lines=reportLines,box=on=>on?'☒':'☐';
   const reference=esc(data.reference),generated=reportLongDate(data.generatedAt?new Date(data.generatedAt):new Date());
@@ -74,7 +75,7 @@ function buildPvHtml(data,logo=typeof CDL_LOGO==='string'?CDL_LOGO:''){
 <table class="ref-table"><tr><td colspan="2">Opération</td></tr>${row('Adresse du chantier','adresse_site',text(data.siteAddress))}${row('Objet','objet',esc(data.caseName))}${row('Date de visite','date_visite',date(data.visitDate))}</table>
 <div class="pv-block"><div class="pv-label">Références contractuelles</div>${list(pv.references,'references')}</div>
 <div class="pv-block"><div class="pv-label">Ouvrage et prestations</div>${list(pv.works,'ouvrage')}</div>
-<div class="pv-block"><div class="pv-label">Parties présentes</div>${list(data.presents,'presents')}</div>
+<div class="pv-block"><div class="pv-label">Parties présentes</div>${list(data.presents,'presents')}${reportAttendanceLine(attendance,false)}</div>
 ${h(levee?'Rappel de la réception':'Réception')}
 <p class="pv-choice" data-field="reception_choix">${box(!pv.withReserves)} SANS RÉSERVE &nbsp;&nbsp; ${box(pv.withReserves)} AVEC RÉSERVES (cf. § 2)</p>
 <p>Date d’effet de la réception : <b data-field="reception_date">${pv.effectDate?date(pv.effectDate):'____ / ____ / ________'}</b> (point de départ des garanties légales – art. 1792-6 C. civ.)</p>
@@ -94,6 +95,7 @@ ${pv.balanceComment.trim()?`<p data-field="solde_commentaire">${text(pv.balanceC
 <table class="pv-signatures"><tr><td><b>Pour le maître d’ouvrage</b><br><span data-field="signataire_moa">${esc(pv.ownerSignatory||pv.ownerName)}</span>${signCell(pv.signatures.owner,'signature_moa')}</td><td><b>Pour l’entreprise ${esc(pv.companyName)}</b><br><span data-field="signataire_entreprise">${esc(pv.companySignatory||pv.companyRepresentative)}</span>${signCell(pv.signatures.company,'signature_entreprise')}</td></tr>${expert?`<tr><td colspan="2"><b>L’expert assistant le maître d’ouvrage</b><br>${esc(REPORT_EXPERT.name)} — CDL EXPERT${signCell(expert,'signature_expert')}</td></tr>`:''}</table>
 <p class="pv-assist">Établi avec l’assistance de ${esc(REPORT_EXPERT.name)}, CDL EXPERT, expert assistant le maître d’ouvrage.</p>
 ${sections?`<h2 class="pv-h pv-annex">Annexe photographique</h2>${sections}`:''}
+${reportAttendanceAnnex(attendance)}
 <footer class="doc-footer"><div><span class="footer-brand">${esc(REPORT_EXPERT.brand)}</span><br>${esc(REPORT_EXPERT.title)}</div><div class="footer-contact"><span data-field="ref_pied">${reference}</span><br>Document confidentiel<br>Généré le <span data-field="date_generation">${generated}</span></div></footer>
 </div>
 </body>
@@ -131,7 +133,9 @@ async function buildPvWord(data,library=globalThis.docx){
   if(reportLines(pv.references).length)children.push(paragraph('Références :',{bold:true,keepNext:true}),...multi(pv.references));
   if(reportLines(pv.works).length)children.push(paragraph('Ouvrage et prestations :',{bold:true,keepNext:true}),...multi(pv.works));
   children.push(paragraph('Adresse du chantier : '+(data.siteAddress||'').replace(/\r?\n/g,', ')),paragraph('Date de visite : '+date(data.visitDate)));
-  if(reportLines(data.presents).length)children.push(paragraph('Parties présentes :',{bold:true,keepNext:true}),...multi(data.presents));
+  const attendance=(Array.isArray(data.attendance)?data.attendance:[]).map(a=>typeof a==='string'?{src:a}:a).filter(a=>reportImage(a?.src)).slice(0,6);
+  if(reportLines(data.presents).length||attendance.length)children.push(paragraph('Parties présentes :',{bold:true,keepNext:true}),...multi(data.presents));
+  if(attendance.length)children.push(paragraph(`Feuille de présence signée (${attendance.length} page${attendance.length>1?'s':''}) : voir annexe.`));
   children.push(heading(`1) ${levee?'Rappel de la réception':'Réception'}`),paragraph(`${box(!pv.withReserves)} SANS RÉSERVE    ${box(pv.withReserves)} AVEC RÉSERVES (cf. § 2)`,{bold:true}),paragraph(`Date d’effet de la réception : ${pv.effectDate?date(pv.effectDate):'____ / ____ / ________'} (point de départ des garanties légales – art. 1792-6 C. civ.)`));
   if(pv.worksStart||pv.worksEnd)children.push(paragraph(`Période de travaux : ouverture de chantier le ${date(pv.worksStart)||'—'} et fin le ${date(pv.worksEnd)||'—'}`));
   children.push(...multi(pv.receptionNotes));
@@ -149,6 +153,9 @@ async function buildPvWord(data,library=globalThis.docx){
   children.push(heading('Signatures'),table([[[paragraph('Pour le maître d’ouvrage',{bold:true}),paragraph(pv.ownerSignatory||pv.ownerName),...signImage(pv.signatures.owner,'Signature :')],[paragraph('Pour l’entreprise '+pv.companyName,{bold:true}),paragraph(pv.companySignatory||pv.companyRepresentative),...signImage(pv.signatures.company,'Signature :')]],...(expert?[[[paragraph('L’expert assistant le maître d’ouvrage',{bold:true}),paragraph(REPORT_EXPERT.name+' — CDL EXPERT'),...signImage(expert,'')],[paragraph('')]]]:[])],{cols:[50,50]}),paragraph(`Établi avec l’assistance de ${REPORT_EXPERT.name}, CDL EXPERT, expert assistant le maître d’ouvrage.`,{size:18}));
   const photos=wordPhotoBlocks(data,library);
   if(photos.length)children.push(new Paragraph({pageBreakBefore:true,children:[run('Annexe photographique',{bold:true,size:26})]}),...photos);
+  attendance.forEach((a,i)=>{const ratio=Math.min(640/(a.width||640),860/(a.height||860));
+    children.push(new Paragraph({pageBreakBefore:true,keepNext:true,children:[run(i?`Annexe — Feuille de présence (page ${i+1})`:'Annexe — Feuille de présence',{bold:true,size:26})]}),
+      new Paragraph({alignment:AlignmentType.CENTER,children:[new ImageRun({data:a.src,type:a.src.startsWith('data:image/png')?'png':'jpg',transformation:{width:Math.round((a.width||640)*ratio),height:Math.round((a.height||860)*ratio)}})]}));});
   const doc=new Document({creator:'Constat — CDL EXPERT',title:info.title,styles:{default:{document:{run:{font:'Arial',size:22}}}},sections:[{properties:{page:{size:{width:11906,height:16838},margin:{top:1020,bottom:1020,left:1020,right:1020}}},footers:{default:new Footer({children:[new Paragraph({alignment:AlignmentType.RIGHT,children:[new TextRun({children:[`${info.title}${data.reference?' — '+data.reference:''} — page `,PageNumber.CURRENT,' / ',PageNumber.TOTAL_PAGES],font:'Arial',size:16})]})]})},children}]});
   return Packer.toBlob(doc);
 }

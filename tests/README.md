@@ -20,6 +20,7 @@ node tests/pv-report.cjs
 node tests/pv.cjs
 node tests/auth.cjs
 node tests/offline-auth.cjs
+node tests/cloture.cjs
 ```
 
 `html-report.cjs` et `pv-report.cjs` s'exécutent sans navigateur ni serveur. `dossiers.cjs` couvre aussi le parcours expertise judiciaire (absence de données nominatives, export HTML).

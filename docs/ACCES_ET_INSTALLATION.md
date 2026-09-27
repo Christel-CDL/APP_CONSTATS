@@ -63,3 +63,16 @@ pas être supprimée), mais elle ne donne accès à rien sans compte autorisé.
 - Expertise judiciaire : le champ `Client / Juridiction` n'est jamais lu, transmis ni écrit par le serveur.
 - Supprimer un dossier dans l'application le retire de l'appareil seulement ; il reste dans Airtable.
 - Le jeton Airtable doit avoir `data.records:read` et `data.records:write` sur la base CONSTATS.
+
+## Fiche de suivi des constats (table Constats)
+
+- Chaque constat a une fiche dans la table `Constats`, retrouvée par `Identifiant appli` (identifiant du constat
+  sur l'appareil) : `Titre`, `Date de visite`, `Statut`, `Projet`, `Auteur`, et une `Synthèse` limitée au nombre de
+  photos et au nom du dernier fichier exporté.
+- Statut `Finalisé` dès qu'un rapport (HTML, Word, PDF) est exporté ; `Rapport envoyé` quand le constat est terminé
+  (« ✓ Terminer ce constat ») après un export. Hors connexion, la fiche est envoyée au retour du réseau.
+- Photos, commentaires, feuille de présence et rapports ne sont **jamais** envoyés à Airtable : ils restent sur
+  l'appareil et dans les fichiers exportés (OneDrive).
+- Expertise judiciaire : titre limité à la référence OPALEXE et à la date ; `Lieu visité` toujours vide (contrôlé
+  aussi par le serveur d'après le type du dossier lié).
+- Nom de table modifiable par la variable facultative `AIRTABLE_CONSTATS_TABLE` (défaut `Constats`).
