@@ -26,6 +26,7 @@ const png='data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAA
     // 2. Réseau coupé ET serveur arrêté : aucune requête ne peut aboutir
     await context.setOffline(true);server.kill();await new Promise(r=>setTimeout(r,300));
     await page.evaluate(()=>sessionStorage.clear());// nouveau lancement de l'icône
+    await page.goto(BASE+'/');await page.waitForSelector('#profiles',{state:'attached'});// adresse racine tapée hors connexion
     await page.goto(BASE+'/demarrer.html');await page.waitForFunction(()=>document.querySelectorAll('.profile').length===1);
     assert.match(await page.locator('#status').innerText(),/Hors connexion/);
     await page.locator('.profile button.open').click();await page.waitForURL(/index\.html/);await page.waitForFunction(()=>typeof ready!=='undefined'&&ready);

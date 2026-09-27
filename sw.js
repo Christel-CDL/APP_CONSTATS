@@ -1,9 +1,14 @@
 'use strict';
 const PREFIX='constat-shell-'+self.registration.scope;
-const CACHE=PREFIX+'v20260927-7';
-const ASSETS=['index.html','demarrer.html','launcher.js','launcher.css','manifest.webmanifest','icons/icon-192.png','icons/icon-512.png','icons/apple-touch-icon.png','profile.js','legacy-import.js','styles.css','refinements.css','field-app.js','report-logo.js','html-report.js','cdl-report.js','pv-report.js','pv-editor.js','signature.js','drawing.js','drafts.js','dossiers.js','visit-access.js','pdf-report.js','word-report.js','export-actions.js','offline.js','vendor/pdf-lib.min.js','vendor/docx.js'];
+const CACHE=PREFIX+'v20260927-8';
+const ASSETS=['./','index.html','demarrer.html','launcher.js','launcher.css','manifest.webmanifest','icons/icon-192.png','icons/icon-512.png','icons/apple-touch-icon.png','profile.js','legacy-import.js','styles.css','refinements.css','field-app.js','report-logo.js','html-report.js','cdl-report.js','pv-report.js','pv-editor.js','signature.js','drawing.js','drafts.js','dossiers.js','visit-access.js','pdf-report.js','word-report.js','export-actions.js','offline.js','vendor/pdf-lib.min.js','vendor/docx.js'];
 const urls=ASSETS.map(path=>new URL(path,self.registration.scope).href);
-self.addEventListener('install',event=>event.waitUntil(caches.open(CACHE).then(cache=>cache.addAll(urls))));
+// Une réponse obtenue après redirection (la racine renvoie vers l'écran de lancement) est recopiée sans son
+// indicateur de redirection : servie ensuite hors connexion à une navigation, elle serait refusée par le navigateur.
+self.addEventListener('install',event=>event.waitUntil(caches.open(CACHE).then(cache=>Promise.all(urls.map(async url=>{
+  const response=await fetch(url,{credentials:'same-origin',cache:'no-cache'});if(!response.ok)throw new Error('Mise en cache impossible : '+url);
+  await cache.put(url,response.redirected?new Response(await response.blob(),{status:200,headers:response.headers}):response);
+})))));
 self.addEventListener('activate',event=>event.waitUntil((async()=>{
   for(const key of await caches.keys())if(key.startsWith(PREFIX)&&key!==CACHE)await caches.delete(key);
   await self.clients.claim();
