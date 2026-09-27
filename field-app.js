@@ -42,19 +42,20 @@ function transcriptStatus(photo){return photo.transcriptStatus||(photo.transcrip
 function renderCaptures(){
   const visible=state.photos.filter(p=>p.subject===state.activeSubject);
   $('#capture-list').innerHTML=visible.length?visible.map(photo=>`<article class="capture-card" data-photo-id="${photo.id}"><div class="photo-frame"><img src="${escapeHtml(photo.annotatedSrc||photo.src)}" alt="Photo ${photo.number}"><span>PHOTO ${photo.number}</span></div><div class="capture-fields">
-  <label>Désordre ou lieu<input class="photo-subject-name" value="${escapeHtml(photo.subject)}" list="subject-options" maxlength="160"></label><button class="secondary subject-apply" data-command="subject">Valider le rattachement</button>
+  <label>Sujet de cette photo (désordre ou lieu)<select class="photo-subject" aria-label="Sujet de la photo ${photo.number}">${state.subjects.map(s=>`<option value="${escapeHtml(s)}" ${s===photo.subject?'selected':''}>${escapeHtml(s)}</option>`).join('')}<option value="__nouveau">＋ Nouveau sujet…</option></select></label>
   <label>Description<textarea data-edit="description">${escapeHtml(photo.description)}</textarea></label><button type="button" class="expand-text" data-command="expand" data-field="description">⤢ Écrire en grand</button><label>Commentaires / observations<textarea data-edit="comment">${escapeHtml(photo.comment)}</textarea></label><button type="button" class="expand-text" data-command="expand" data-field="comment">⤢ Écrire en grand</button>
   <div class="input-modes"><button class="secondary" data-command="annotate">Annoter la photo</button><button class="secondary" data-command="drawing">Écrire au stylet</button><button class="secondary" data-command="audio" ${recording?'disabled':''}>🎙 Dicter ou enregistrer un son</button></div>
   ${photo.drawing?`<figure class="handwriting"><figcaption>Note manuscrite — modifiable avec « Écrire au stylet »</figcaption><img src="${escapeHtml(photo.drawing)}" alt="Note manuscrite de la photo ${photo.number}"></figure>`:''}
   <section class="audio-note"><strong>Enregistrement sonore</strong>${audioMarkup(photo)}${photo.transcript?`<label>Transcription (ancienne note vocale)<textarea data-edit="transcript">${escapeHtml(photo.transcript)}</textarea></label>`:''}</section>
   <p class="photo-location">${locationLabel(photo)}</p><button class="secondary" data-command="locate">Associer la position actuelle à cette photo</button><button class="delete-photo" data-command="delete" ${recording?'disabled':''}>Supprimer la photo</button></div></article>`).join(''):'<div class="capture-empty"><h3>Aucune photo pour ce sujet</h3><p>Ouvrez l’appareil photo ou importez plusieurs photos.</p></div>';
-  let list=$('#subject-options');if(!list){list=document.createElement('datalist');list.id='subject-options';document.body.append(list);}list.innerHTML=state.subjects.map(s=>`<option value="${escapeHtml(s)}">`).join('');
 }
 $('#capture-list').addEventListener('input',e=>{const card=e.target.closest('[data-photo-id]');if(!card||!e.target.dataset.edit)return;const photo=state.photos.find(p=>p.id===card.dataset.photoId);photo[e.target.dataset.edit]=e.target.value;saveVisit();});
-$('#capture-list').addEventListener('change',e=>{if(!e.target.matches('.photo-subject-name'))return;const photo=state.photos.find(p=>p.id===e.target.closest('[data-photo-id]').dataset.photoId);const subject=addSubject(e.target.value);if(!subject){e.target.value=photo.subject;return;}photo.subject=subject;state.activeSubject=subject;renderSubjects();renderCaptures();saveVisit();});
+// Changer le sujet d'une photo : effet immédiat ; son numéro chronologique ne change pas.
+$('#capture-list').addEventListener('change',e=>{if(!e.target.matches('.photo-subject'))return;const photo=state.photos.find(p=>p.id===e.target.closest('[data-photo-id]').dataset.photoId);if(!photo)return;
+  let subject=e.target.value;if(subject==='__nouveau'){subject=addSubject(prompt('Nom du nouveau sujet (désordre ou lieu) :')||'');if(!subject){e.target.value=photo.subject;return;}}
+  if(subject===photo.subject)return;photo.subject=subject;renderSubjects();renderCaptures();saveVisit();tell(`Photo ${photo.number} rattachée à « ${subject} ». Elle apparaît désormais dans ce sujet.`);});
 $('#capture-list').addEventListener('click',async e=>{const b=e.target.closest('[data-command]');if(!b)return;const photo=state.photos.find(p=>p.id===b.closest('[data-photo-id]').dataset.photoId);if(!photo)return;
   switch(b.dataset.command){
-    case 'subject':const subject=addSubject(b.closest('[data-photo-id]').querySelector('.photo-subject-name').value);if(subject){photo.subject=subject;state.activeSubject=subject;renderSubjects();renderCaptures();saveVisit();}break;
     case 'annotate':openDrawing(photo.id,'photo');break;
     case 'drawing':openDrawing(photo.id);break;
     case 'expand':openTextEditor(photo,b.dataset.field);break;

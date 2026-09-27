@@ -73,6 +73,11 @@ fs.mkdirSync(out,{recursive:true});
     await page.locator('[data-command="expand"][data-field="description"]').first().click();assert.ok((await page.locator('#text-dialog-field').boundingBox()).height>=400,'Cadre d’écriture agrandi');
     await page.locator('#text-dialog-field').fill('Écrit dans le grand cadre');await page.locator('#save-text').click();
     assert.equal(await page.evaluate(()=>state.photos[0].description),'Écrit dans le grand cadre');
+    // Changement de sujet d'une photo par la liste (effet immédiat, numéro conservé)
+    await page.evaluate(()=>{addSubject('ZZ Façade test');renderCaptures();});const moved=await page.evaluate(()=>state.photos[0].number);
+    await page.locator('.photo-subject').first().selectOption('ZZ Façade test');
+    await page.waitForFunction(n=>state.photos.find(p=>p.number===n).subject==='ZZ Façade test',moved);
+    await page.evaluate(n=>{state.photos.find(p=>p.number===n).subject=state.subjects[0];renderSubjects();renderCaptures();},moved);
     assert.equal(await page.evaluate(()=>window.mediaRequests),1,'Audio reuses prepared microphone');
     await page.locator('[data-edit="description"]').first().fill('Description conservée');
     await page.locator('[data-edit="comment"]').first().fill('COMMENTAIRE_CONFIDENTIEL');
