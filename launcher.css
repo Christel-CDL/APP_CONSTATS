@@ -11,3 +11,4 @@ label{display:grid;gap:6px;font-weight:600;margin-bottom:12px}input{font:16px Ar
 .primary{width:100%;border:0;border-radius:10px;padding:14px;font:600 16px Arial;background:var(--green);color:white;cursor:pointer}.primary:disabled{opacity:.6}
 .link{border:0;background:none;color:#28665d;font:600 14px Arial;cursor:pointer;padding:10px 0}.help{font-size:13px;color:var(--muted);line-height:1.5}
 .install p{line-height:1.5}footer{text-align:center;color:var(--muted)}
+.install-steps{padding-left:22px;line-height:1.6;margin:0 0 8px}.install-steps li{margin-bottom:6px}.share-glyph{display:inline-block;border:1.5px solid currentColor;border-radius:4px;padding:0 4px;font-size:12px}
