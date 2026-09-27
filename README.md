@@ -23,6 +23,10 @@ Push sur `main` → GitHub Actions publie l'image `ghcr.io/christel-cdl/app-cons
 Voir [le mode d'emploi](LISEZ-MOI.txt) et [l'état d'avancement](docs/ETAT_AVANCEMENT.md).
 Les brouillons et les dossiers sont sauvegardés localement dans le navigateur, sans synchronisation entre appareils. « Mes dossiers » permet de créer un dossier (nom, référence, type, client, adresse, statut) et d'y rattacher des constats ; le tableau de bord n'affiche plus que ces données réelles.
 
+## Modèles de rapport CDL EXPERT (27 septembre 2026)
+
+Rapport HTML autonome au modèle Expertise judiciaire, Expertise privée ou Constat, selon le type du dossier. En expertise judiciaire, aucune donnée nominative (parties, juridiction, n° RG) n'est saisie ni conservée : le bloc nominatif du rapport est laissé vide et complété après génération. Voir [les modèles de rapport](docs/MODELES_RAPPORT.md).
+
 ## Version stabilisée du 24 septembre 2026
 
 - Préparation des accès caméra, microphone et géolocalisation en début de visite.

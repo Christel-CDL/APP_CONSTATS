@@ -5,10 +5,13 @@ const DOSSIER_KEY='constat-dossiers'+(TEST_MODE?'-verification':'');
 const DOSSIER_FIELDS=['name','reference','type','client','address','status'];
 const DOSSIER_STATUS={'En cours':'progress','En attente':'draft','Clos':'done'};
 let editingDossierId=null;
-function readDossiers(){try{const list=JSON.parse(localStorage.getItem(DOSSIER_KEY)||'[]');return Array.isArray(list)?list.filter(d=>d&&typeof d.id==='string'&&typeof d.name==='string'):[];}catch{return [];}}
+// Expertise judiciaire : aucun nom de partie ni juridiction n'est conservé dans l'application (RGPD).
+function readDossiers(){try{const list=JSON.parse(localStorage.getItem(DOSSIER_KEY)||'[]');return Array.isArray(list)?list.filter(d=>d&&typeof d.id==='string'&&typeof d.name==='string').map(d=>reportTypeOf(d.type)==='ej'?{...d,client:''}:d):[];}catch{return [];}}
 function writeDossiers(list){try{localStorage.setItem(DOSSIER_KEY,JSON.stringify(list));return true;}catch{alert('Le dossier n’a pas pu être enregistré sur cet appareil (stockage plein ou bloqué).');return false;}}
 function dossierById(id){return id?readDossiers().find(d=>d.id===id)||null:null;}
-function cleanDossier(value){const d={};for(const key of DOSSIER_FIELDS)d[key]=typeof value?.[key]==='string'?value[key].trim().slice(0,300):'';d.status=DOSSIER_STATUS[d.status]?d.status:'En cours';return d;}
+function cleanDossier(value){const d={};for(const key of DOSSIER_FIELDS)d[key]=typeof value?.[key]==='string'?value[key].trim().slice(0,300):'';d.status=DOSSIER_STATUS[d.status]?d.status:'En cours';if(reportTypeOf(d.type)==='ej')d.client='';return d;}
+// Valeurs reportées dans le constat lors du rattachement à un dossier.
+function dossierVisitFields(dossier){const caseType=reportTypeOf(dossier.type);return {caseName:dossier.name,caseReference:dossier.reference,caseType,siteAddress:dossier.address||'',clientName:caseType==='ep'?dossier.client||'':'',clientAddress:caseType==='ep'?state.clientAddress:''};}
 function saveDossier(values,id){const list=readDossiers(),now=new Date().toISOString(),data=cleanDossier(values);if(!data.name)return null;let dossier=list.find(d=>d.id===id);if(dossier)Object.assign(dossier,data,{updatedAt:now});else{dossier={id:createId(),...data,createdAt:now,updatedAt:now};list.push(dossier);}return writeDossiers(list)?dossier:null;}
 // A visit backup file carries a copy of its dossier so it can be recreated on another device.
 function importDossier(value){if(!value||typeof value.id!=='string'||!/^[\w-]+$/.test(value.id)||typeof value.name!=='string'||!value.name.trim())return;const list=readDossiers();if(list.some(d=>d.id===value.id))return;const now=new Date().toISOString();list.push({id:value.id,...cleanDossier(value),createdAt:typeof value.createdAt==='string'?value.createdAt:now,updatedAt:now});writeDossiers(list);}
@@ -17,7 +20,9 @@ function formatDate(value,withTime){const date=new Date(value);if(Number.isNaN(d
 function statusBadge(status){return `<span class="status ${DOSSIER_STATUS[status]||'progress'}">${escapeHtml(status)}</span>`;}
 
 // Formulaire de création / modification
-function openDossierForm(id){const dossier=dossierById(id),form=$('#dossier-form');editingDossierId=dossier?dossier.id:null;form.reset();for(const key of DOSSIER_FIELDS)if(dossier)form.elements[key].value=dossier[key]||'';$('#dossier-dialog-title').textContent=dossier?'Modifier le dossier':'Nouveau dossier';$('#dossier-dialog').showModal();form.elements.name.focus();}
+function syncDossierFormType(){const form=$('#dossier-form'),ej=reportTypeOf(form.elements.type.value)==='ej';form.elements.client.disabled=ej;if(ej)form.elements.client.value='';form.elements.reference.placeholder=ej?'Référence OPALEXE (ex. EJ26-1402)':'Référence interne…';$('#dossier-client-note').hidden=!ej;}
+$('#dossier-form').elements.type.addEventListener('change',syncDossierFormType);
+function openDossierForm(id){const dossier=dossierById(id),form=$('#dossier-form');editingDossierId=dossier?dossier.id:null;form.reset();for(const key of DOSSIER_FIELDS)if(dossier)form.elements[key].value=dossier[key]||'';if(dossier&&dossier.type==='Expertise amiable')form.elements.type.value='Expertise privée';syncDossierFormType();$('#dossier-dialog-title').textContent=dossier?'Modifier le dossier':'Nouveau dossier';$('#dossier-dialog').showModal();form.elements.name.focus();}
 function closeDossierForm(){$('#dossier-dialog').close();editingDossierId=null;}
 $('#new-dossier').addEventListener('click',()=>openDossierForm());
 $('#picker-new-dossier').addEventListener('click',()=>openDossierForm());
@@ -31,7 +36,7 @@ $('#dossier-form').addEventListener('submit',e=>{e.preventDefault();const form=e
 
 // Rattachement du constat en cours (étape 1)
 function syncDossierPicker(){const select=$('#case-dossier'),list=readDossiers().sort((a,b)=>a.name.localeCompare(b.name,'fr'));select.innerHTML='<option value="">— Aucun dossier —</option>'+list.map(d=>`<option value="${escapeHtml(d.id)}">${escapeHtml(d.name)}${d.reference?' · '+escapeHtml(d.reference):''}</option>`).join('');select.value=list.some(d=>d.id===state.dossierId)?state.dossierId:'';}
-function applyDossier(id){const dossier=dossierById(id);state.dossierId=dossier?dossier.id:null;if(dossier){state.caseName=dossier.name;state.caseReference=dossier.reference;touchDossier(dossier.id);}renderCaseDetails();syncDossierPicker();saveVisit();}
+function applyDossier(id){const dossier=dossierById(id);state.dossierId=dossier?dossier.id:null;if(dossier){Object.assign(state,dossierVisitFields(dossier));touchDossier(dossier.id);}renderCaseDetails();syncDossierPicker();saveVisit();}
 $('#case-dossier').addEventListener('change',e=>applyDossier(e.target.value));
 
 // Page « Mes dossiers » et tableau de bord

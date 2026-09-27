@@ -19,3 +19,8 @@
 .empty-row{text-align:center;color:var(--muted)!important;display:table-cell!important}.empty-note{margin:0 20px 20px;color:var(--muted);font-size:12px}.appointment.overdue .time{color:#a13c2b}
 @media(max-width:760px){.dossier-fields{grid-template-columns:1fr}.dossier-picker{flex-direction:column;align-items:stretch}.dossier-card-head{flex-direction:column}}
 .continue-card[hidden],.badge[hidden]{display:none}
+[hidden]{display:none!important}
+.rgpd-note{margin:0 0 16px;padding:10px 14px;background:#fff8e6;border-left:4px solid #b07a10;border-radius:0 8px 8px 0;font-size:13px;line-height:1.5;color:#5a4a10}
+.cdl-report{margin-top:24px;padding:18px;border:1px solid #cbdad4;border-radius:10px;background:#fafcfb}.cdl-report h3{margin-top:0}.cdl-fields{display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-bottom:12px}.cdl-fields label{display:grid;gap:6px;font-size:13px;font-weight:600}.cdl-fields .wide{grid-column:1/-1}.cdl-fields textarea{min-height:70px}.cdl-fields .check-label{display:flex}
+#dossier-client-note{font-weight:400;color:#5a4a10;line-height:1.4}
+@media(max-width:760px){.cdl-fields{grid-template-columns:1fr}}
