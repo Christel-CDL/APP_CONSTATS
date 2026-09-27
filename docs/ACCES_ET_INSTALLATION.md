@@ -51,3 +51,15 @@ Les secrets ne sont jamais écrits dans le dépôt ni dans le fichier compose.
 
 L'application s'ouvre alors en plein écran, sans barre d'adresse. L'adresse web existe toujours (elle ne peut
 pas être supprimée), mais elle ne donne accès à rien sans compte autorisé.
+
+## Dossiers synchronisés avec Airtable (table Projets)
+
+- Au lancement (et via « ↻ Actualiser depuis Airtable » dans « Mes dossiers »), l'application récupère les
+  dossiers rattachés au compte (champ `Responsable` / lien `Projets` de l'utilisateur), limités aux types du
+  profil : `Expertise judiciaire` pour le profil judiciaire, `Expertise amiable` pour le profil privé, et les
+  missions de conseil, diagnostic et suivi de chantier pour les deux.
+- Un dossier créé ou modifié dans l'application est enregistré dans Airtable (type privé → `Expertise amiable`).
+  Hors connexion, il est marqué « En attente d'envoi » et transmis à la synchronisation suivante.
+- Expertise judiciaire : le champ `Client / Juridiction` n'est jamais lu, transmis ni écrit par le serveur.
+- Supprimer un dossier dans l'application le retire de l'appareil seulement ; il reste dans Airtable.
+- Le jeton Airtable doit avoir `data.records:read` et `data.records:write` sur la base CONSTATS.
