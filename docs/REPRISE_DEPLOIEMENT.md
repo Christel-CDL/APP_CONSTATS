@@ -7,7 +7,7 @@ Les fichiers de l'application sont placés à la racine de ce dépôt : ouvrir `
 
 ## Mise en ligne confiée à Claude
 
-- Application statique HTML/CSS/JavaScript, sans compilation ni installation npm.
+- Application HTML/CSS/JavaScript sans compilation, servie depuis le 27 septembre par `server/index.cjs` (contrôle d'accès) ; image Docker Node.
 - Publier `index.html`, les fichiers JavaScript et CSS référencés, `sw.js` et le dossier `vendor/` en conservant leurs chemins relatifs. Les bibliothèques PDF et DOCX sont embarquées avec leurs licences.
 - HTTPS nécessaire aux accès caméra, microphone et géolocalisation sur les appareils mobiles.
 - `server.cjs` et `OUVRIR_CONSTAT.cmd` servent uniquement au lancement local, pas à la production.
@@ -45,5 +45,5 @@ Consulter `ETAT_AVANCEMENT.md` pour l'historique métier et `../LISEZ-MOI.txt` p
 ## Travail externe restant
 
 - Transcription différée : confiée à Claude lors du déploiement, selon le choix de Christel du 24 septembre. Choisir le moteur et l'hébergement avec elle avant intégration. Les audios peuvent déjà être téléchargés et leur texte saisi/collé après la visite.
-- Authentification, synchronisation multi-appareils, SharePoint et automatisations : non intégrés dans ce lot de stabilisation.
+- Authentification : intégrée le 27 septembre (voir ACCES_ET_INSTALLATION.md). Synchronisation multi-appareils, SharePoint et automatisations : non intégrés.
 - Tester sur l'adresse HTTPS définitive, puis importer une sauvegarde JSON pour vérifier le transfert d'une visite locale.

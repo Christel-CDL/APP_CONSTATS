@@ -1,7 +1,7 @@
 'use strict';
 // Saisie des procès-verbaux (expertise privée) : parties, réception, réserves, DOE, solde, signataires.
-function pvMode(){return state.caseType==='ep'&&state.pv.document!=='constat';}
-function pvHasData(pv){return !!(pv.companyName||pv.ownerName||pv.references||pv.reserves.length);}
+function pvMode(){return state.caseType==='ep'&&pvIsPv(state.pv);}
+function pvHasData(pv){return !!(pv.companyName||pv.ownerName||pv.references||pv.reserves.length||Object.keys(pv.signatures||{}).length);}
 function pvInput(key,label,options={}){const value=escapeHtml(state.pv[key]||'');const attrs=`data-pv="${key}"${options.placeholder?` placeholder="${escapeHtml(options.placeholder)}"`:''}`;
   return `<label class="${options.wide?'wide':''}">${label}${options.area?`<textarea ${attrs}>${value}</textarea>`:`<input ${attrs} type="${options.type||'text'}" value="${value}" maxlength="${options.max||300}">`}</label>`;}
 function renderPvEditor(){
@@ -32,7 +32,8 @@ function renderPvEditor(){
   <fieldset><legend>Documents remis (DOE)</legend><div class="pv-rows">${pv.doe.map((d,i)=>`<div class="pv-row" data-pv-list="doe" data-index="${i}"><input type="checkbox" data-pv-item="provided" ${d.provided?'checked':''} aria-label="Remis"><input data-pv-item="label" value="${escapeHtml(d.label)}" maxlength="300" aria-label="Document"><button type="button" class="remove-action" data-pv-command="remove" aria-label="Supprimer">×</button></div>`).join('')}</div>
     <button type="button" class="secondary" data-pv-command="add-doe">＋ Ajouter un document</button><div class="cdl-fields">${pvInput('doeComment','Commentaire (délai de remise…)',{area:true,wide:true})}</div></fieldset>
   <fieldset><legend>Règlement du solde</legend><div class="cdl-fields">${pvInput('amountTotal','Montant total de la commande',{placeholder:'Ex. 82 000,00 € TTC'})}${pvInput('amountBalance','Solde restant à verser')}${pvInput('balanceComment','Conditions de versement du solde',{area:true,wide:true})}</div></fieldset>
-  <fieldset><legend>Signataires</legend><div class="cdl-fields">${pvInput('ownerSignatory','Pour le maître d’ouvrage',{placeholder:pv.ownerName||'Nom du signataire'})}${pvInput('companySignatory','Pour l’entreprise',{placeholder:pv.companyRepresentative||'Nom du signataire'})}</div></fieldset>`;
+  <fieldset><legend>Signataires</legend><div class="cdl-fields"><div>${pvInput('ownerSignatory','Pour le maître d’ouvrage',{placeholder:pv.ownerName||'Nom du signataire'})}${signatureMarkup(pv.signatures.owner,'owner','du maître d’ouvrage')}</div><div>${pvInput('companySignatory','Pour l’entreprise',{placeholder:pv.companyRepresentative||'Nom du signataire'})}${signatureMarkup(pv.signatures.company,'company','de l’entreprise')}</div></div>
+    <p class="muted">Faites relire le PV avant signature : toute modification ultérieure invalide les signatures. Signature électronique simple (art. 1367 C. civ. ; règlement eIDAS n° 910/2014, art. 25) : pour une force probante renforcée, faites aussi signer l’exemplaire imprimé. Votre signature d’expert se trouve plus bas, dans « Rapport CDL EXPERT ».</p></fieldset>`;
   if(levee)fillPvImportSources();
 }
 async function fillPvImportSources(){
