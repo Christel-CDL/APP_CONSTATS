@@ -10,7 +10,7 @@ const config={
   port:Number(env.PORT)||8080,
   root:path.resolve(env.APP_ROOT||path.join(__dirname,'..','public')),
   appUrl:(env.APP_URL||'').replace(/\/+$/,''),
-  secret:env.SESSION_SECRET||'',
+  secret:String(env.SESSION_SECRET||'').trim(),
   sessionDays:Number(env.SESSION_DAYS)||90,
   airtable:{token:env.AIRTABLE_TOKEN||'',base:env.AIRTABLE_BASE_ID||'',table:env.AIRTABLE_USERS_TABLE||'Utilisateurs'},
   mail:{host:env.SMTP_HOST||'',port:Number(env.SMTP_PORT)||587,secure:env.SMTP_SECURE==='true',user:env.SMTP_USER||'',pass:env.SMTP_PASS||'',from:env.MAIL_FROM||''},
@@ -18,8 +18,13 @@ const config={
   // Tests uniquement : comptes fournis en JSON au lieu d'Airtable.
   devUsers:env.DEV_USERS?JSON.parse(env.DEV_USERS):null
 };
-if(config.secret.length<32){console.error('SESSION_SECRET manquant ou trop court (32 caractères minimum).');process.exit(1);}
-if(!config.devUsers&&(!config.airtable.token||!config.airtable.base)){console.error('AIRTABLE_TOKEN et AIRTABLE_BASE_ID sont requis.');process.exit(1);}
+// Diagnostic de démarrage : présence et longueur de chaque réglage, jamais leur valeur.
+{const report=['APP_URL','SESSION_SECRET','AIRTABLE_TOKEN','AIRTABLE_BASE_ID','SMTP_HOST','SMTP_PORT','SMTP_USER','SMTP_PASS','MAIL_FROM'].map(name=>{const value=String(env[name]||'').trim();return `  ${name} : ${value?`reçu (${value.length} caractères)`:'ABSENT'}`;});
+  const problems=[];if(config.secret.trim().length<32)problems.push(`SESSION_SECRET manquant ou trop court (${config.secret.trim().length} caractères reçus, 32 minimum, 64 recommandés).`);
+  if(!config.devUsers&&(!config.airtable.token||!config.airtable.base))problems.push('AIRTABLE_TOKEN et AIRTABLE_BASE_ID sont requis.');
+  if(!config.devUsers&&!config.mail.host&&!config.devLogCodes)problems.push('SMTP_HOST manquant : les codes de connexion ne pourraient pas être envoyés.');
+  console.log('Réglages reçus par le conteneur :\n'+report.join('\n'));
+  if(problems.length){console.error('DÉMARRAGE IMPOSSIBLE :\n- '+problems.join('\n- ')+'\nRenseigner ces variables dans hPanel (projet app-constats), puis Déployer.');process.exit(1);}}
 
 const ROLE_TYPES={'Expert judiciaire':['ej','autre'],'Expert':['ep','autre']};
 const ALLOWED_STATUS=new Set(['Actif','Invité']);
