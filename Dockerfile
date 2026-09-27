@@ -6,6 +6,9 @@ COPY index.html \
      dossiers.js \
      drawing.js \
      export-actions.js \
+     cdl-report.js \
+     html-report.js \
+     report-logo.js \
      field-app.js \
      offline.js \
      pdf-report.js \
