@@ -56,3 +56,8 @@ dialog{max-height:calc(100dvh - 24px);max-width:calc(100vw - 16px);overflow:auto
 /* Envoi du fichier exporté (feuille de partage : OneDrive, e-mail, Fichiers) */
 .share-bar{position:fixed;left:12px;right:12px;bottom:calc(12px + env(safe-area-inset-bottom));z-index:60;display:flex;flex-wrap:wrap;align-items:center;gap:10px;justify-content:space-between;background:#1a3a5c;color:#fff;border-radius:12px;padding:12px 14px;box-shadow:0 6px 24px rgba(0,0,0,.25)}
 .share-bar[hidden]{display:none}.share-bar p{margin:0;flex:1 1 220px;font-size:.9rem}.share-bar div{display:flex;gap:8px}.share-bar .secondary{min-width:44px}
+/* Sauvegarde serveur */
+.cloud-badge{font-size:.85rem;color:#3d4b5e;margin:6px 0 0}.cloud-badge.ok{color:#2e6b3a}.cloud-badge.warn{color:#b3261e;font-weight:600}
+.cloud-actions{display:flex;flex-wrap:wrap;gap:8px;margin-top:6px}.draft-card.cloud{border-style:dashed}
+.cloud-closed{margin-top:20px}.cloud-closed summary{cursor:pointer;font-weight:600;padding:8px 0}
+.delete-audio{margin-top:6px;display:block}

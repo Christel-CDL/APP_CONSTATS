@@ -2,7 +2,7 @@
 // Serveur de production de Constats : fichiers de l'application derrière un contrôle d'accès.
 // Comptes : table Utilisateurs d'Airtable (e-mail, rôle, statut). Connexion sans mot de passe : code à 6 chiffres
 // ou lien envoyés par e-mail, puis session signée (cookie HttpOnly). Plusieurs profils par appareil.
-// Aucune donnée de constat ne transite par ce serveur : elles restent sur l'appareil.
+// Les constats sont sauvegardés sur le VPS (DATA_DIR) pour passer d'un appareil à l'autre, avec une copie dans Airtable.
 const http=require('node:http'),fs=require('node:fs'),path=require('node:path'),crypto=require('node:crypto');
 
 const env=process.env;
@@ -18,7 +18,8 @@ const config={
   // Tests uniquement : comptes fournis en JSON au lieu d'Airtable.
   devUsers:env.DEV_USERS?JSON.parse(env.DEV_USERS):null,
   projectsTable:env.AIRTABLE_PROJECTS_TABLE||'Projets',
-  constatsTable:env.AIRTABLE_CONSTATS_TABLE||'Constats'
+  constatsTable:env.AIRTABLE_CONSTATS_TABLE||'Constats',
+  airtableApi:(env.AIRTABLE_API_URL||'https://api.airtable.com/v0').replace(/\/+$/,'')// autre adresse : tests uniquement
 };
 // Diagnostic de démarrage : présence et longueur de chaque réglage, jamais leur valeur.
 {const report=['APP_URL','SESSION_SECRET','AIRTABLE_TOKEN','AIRTABLE_BASE_ID','SMTP_HOST','SMTP_PORT','SMTP_USER','SMTP_PASS','MAIL_FROM'].map(name=>{const value=String(env[name]||'').trim();return `  ${name} : ${value?`reçu (${value.length} caractères)`:'ABSENT'}`;});
@@ -51,7 +52,7 @@ const statusCache=new Map();// id → {user, at}
 function userFrom(record){const f=record.fields||{};const role=typeof f['Rôle']==='string'?f['Rôle']:f['Rôle']?.name;const status=typeof f['Statut du compte']==='string'?f['Statut du compte']:f['Statut du compte']?.name;
   return {id:record.id,email:String(f.Email||'').toLowerCase(),name:String(f.Nom||''),organisation:String(f.Organisation||''),role:role||'',status:status||''};}
 async function airtable(pathname,options={},table=config.airtable.table){
-  const res=await fetch(`https://api.airtable.com/v0/${encodeURIComponent(config.airtable.base)}/${encodeURIComponent(table)}${pathname}`,{...options,headers:{Authorization:`Bearer ${config.airtable.token}`,'Content-Type':'application/json',...options.headers}});
+  const res=await fetch(`${config.airtableApi}/${encodeURIComponent(config.airtable.base)}/${encodeURIComponent(table)}${pathname}`,{...options,headers:{Authorization:`Bearer ${config.airtable.token}`,'Content-Type':'application/json',...options.headers}});
   if(!res.ok)throw new Error(`Airtable ${res.status}`);return res.json();}
 async function findUserByEmail(email){
   if(config.devUsers)return config.devUsers.find(u=>u.email===email)||null;
@@ -87,12 +88,13 @@ function projectFields(body,kind,creating,userId){const text=(v,max)=>String(v??
   return fields;}
 async function userProjectIds(userId){if(config.devUsers)return devProjects.filter(p=>p.owner===userId).map(p=>p.id);
   const record=await airtable('/'+encodeURIComponent(userId));return Array.isArray(record.fields?.Projets)?record.fields.Projets:[];}
-async function listProjects(user){const ids=(await userProjectIds(user.id)).filter(id=>/^rec\w{14}$|^dev-/.test(id)).slice(0,200),types=ROLE_TYPES[user.role]||['autre'];
+async function listProjects(user){return (await listProjectsRaw(user)).filter(p=>(ROLE_TYPES[user.role]||['autre']).includes(p.kind)&&p.name).map(({kind,...p})=>p);}
+async function listProjectsRaw(user){const ids=(await userProjectIds(user.id)).filter(id=>/^rec\w{14}$|^dev-/.test(id)).slice(0,200);
   let records=[];
   if(config.devUsers)records=devProjects.filter(p=>ids.includes(p.id)).map(p=>({id:p.id,fields:p.fields}));
   else for(let i=0;i<ids.length;i+=50){const formula=`OR(${ids.slice(i,i+50).map(id=>`RECORD_ID()='${id}'`).join(',')})`;
     const data=await airtable(`?filterByFormula=${encodeURIComponent(formula)}&pageSize=100`,{},config.projectsTable);records.push(...(data.records||[]));}
-  return records.map(projectFrom).filter(p=>types.includes(p.kind)&&p.name).map(({kind,...p})=>p);}
+  return records.map(projectFrom);}
 async function saveProject(user,body,airtableId){
   const kind=PROJECT_TYPES[LOCAL_TO_AIRTABLE_TYPE[body.type]]||'autre';if(body.type&&!(ROLE_TYPES[user.role]||['autre']).includes(kind))throw Object.assign(new Error('type'),{status:403});
   if(!airtableId&&!String(body.name||'').trim())throw Object.assign(new Error('name'),{status:400});
@@ -103,27 +105,77 @@ async function saveProject(user,body,airtableId){
   const record=airtableId?await airtable('/'+encodeURIComponent(airtableId),{method:'PATCH',body:JSON.stringify({fields})},config.projectsTable)
     :await airtable('',{method:'POST',body:JSON.stringify({fields})},config.projectsTable);
   return projectFrom(record);}
-// ── Constats (table Constats) : fiche de suivi, jamais le contenu ─────────────
-// Titre, date, statut, dossier, auteur et nom du dernier fichier exporté. Photos, commentaires et rapports restent sur
-// l'appareil. Rattaché à une expertise judiciaire : ni lieu ni nom de dossier (seule la référence OPALEXE figure au titre).
+// ── Sauvegarde des constats : VPS (fichiers et constats) + copie dans Airtable (table Constats) ─────────
+// Les photos, sons, notes manuscrites et signatures sont conservés sur le VPS (volume DATA_DIR), sous leur empreinte
+// SHA-256 : un fichier n'est envoyé qu'une fois. Le constat (texte, sans images) y est conservé à chaque sauvegarde,
+// avec un numéro de version qui détecte les modifications faites entre-temps sur un autre appareil.
+// Airtable en reçoit une copie lisible, regroupée et différée (MIRROR_DELAY_MS) : le forfait limite le nombre d'appels.
+// Expertise judiciaire : aucune donnée nominative (donneur d'ordre, feuille de présence) n'est acceptée ; l'adresse
+// du site est conservée, la référence OPALEXE sert d'identifiant de l'expertise.
+const DATA_DIR=path.resolve(env.DATA_DIR||'/data'),MIRROR_DELAY=Number(env.MIRROR_DELAY_MS)||10*6e4;
+const HASH=/^[a-f0-9]{64}$/,DRAFT_ID=/^[\w-]{6,60}$/,BLOB_TYPE=/^(image\/(jpeg|png|webp|gif|bmp|avif)|audio\/[\w.+-]{1,40}|video\/webm)$/;
 const CONSTAT_STATUS=new Set(['Brouillon','Finalisé','Rapport envoyé']);
-const devConstats=[];// tests uniquement
-async function saveConstat(user,body){const text=(v,max)=>String(v??'').replace(/[\u0000-\u001f]+/g,' ').trim().slice(0,max);
-  const draftId=String(body.draftId||'');if(!/^[\w-]{6,60}$/.test(draftId))throw Object.assign(new Error('id'),{status:400});
-  let projet=String(body.projet||''),ej=body.kind==='ej';
-  if(projet){if(!/^rec\w{14}$|^dev-p\d+$/.test(projet)||!(await userProjectIds(user.id)).includes(projet))projet='';
-    else if(config.devUsers)ej=ej||selectName(devProjects.find(p=>p.id===projet)?.fields?.Type)==='Expertise judiciaire';
-    else ej=ej||selectName((await airtable('/'+encodeURIComponent(projet),{},config.projectsTable)).fields?.Type)==='Expertise judiciaire';}
-  const fields={Titre:text(body.title,200)||'Constat','Date de visite':/^\d{4}-\d{2}-\d{2}$/.test(body.date||'')?body.date:null,Statut:CONSTAT_STATUS.has(body.status)?body.status:'Brouillon',
-    'Lieu visité':ej?'':text(body.place,300),'Synthèse':text(body.summary,500),'Identifiant appli':draftId};
-  if(projet)fields.Projet=[projet];
-  if(config.devUsers){let c=devConstats.find(x=>x.fields['Identifiant appli']===draftId&&x.owner===user.id);if(!c){c={id:'dev-c'+(devConstats.length+1),owner:user.id,fields:{Auteur:[user.id]}};devConstats.push(c);}Object.assign(c.fields,fields);return {id:c.id,status:c.fields.Statut};}
-  const found=await airtable(`?maxRecords=1&filterByFormula=${encodeURIComponent(`{Identifiant appli}='${draftId}'`)}`,{},config.constatsTable);
-  const existing=found.records?.[0];
-  if(existing&&!(existing.fields?.Auteur||[]).includes(user.id))throw Object.assign(new Error('owner'),{status:404});
-  const record=existing?await airtable('/'+encodeURIComponent(existing.id),{method:'PATCH',body:JSON.stringify({fields})},config.constatsTable)
-    :await airtable('',{method:'POST',body:JSON.stringify({fields:{...fields,Auteur:[user.id]}})},config.constatsTable);
-  return {id:record.id,status:selectName(record.fields?.Statut)};}
+let storeReady=false;
+{let mounted=false;try{fs.mkdirSync(path.join(DATA_DIR,'fichiers'),{recursive:true});fs.mkdirSync(path.join(DATA_DIR,'constats'),{recursive:true});fs.accessSync(DATA_DIR,fs.constants.W_OK);storeReady=true;}catch{}
+  try{mounted=fs.readFileSync('/proc/mounts','utf8').split('\n').some(line=>line.split(' ')[1]===DATA_DIR);}catch{}
+  console.log(`  DATA_DIR : ${DATA_DIR} — ${storeReady?'accessible':'NON ACCESSIBLE : sauvegarde serveur désactivée'}${storeReady&&!mounted&&!env.DATA_DIR?' — ATTENTION : aucun volume monté, les constats seraient perdus au prochain déploiement':''}`);}
+const safeId=id=>String(id).replace(/[^\w-]/g,'');
+const blobPath=(userId,hash)=>path.join(DATA_DIR,'fichiers',safeId(userId),hash);
+const constatPath=(userId,draftId)=>path.join(DATA_DIR,'constats',safeId(userId),draftId+'.json');
+function writeAtomic(file,data){fs.mkdirSync(path.dirname(file),{recursive:true});const tmp=file+'.'+crypto.randomBytes(4).toString('hex')+'.tmp';fs.writeFileSync(tmp,data);fs.renameSync(tmp,file);}
+function readConstat(userId,draftId){try{return JSON.parse(fs.readFileSync(constatPath(userId,draftId),'utf8'));}catch{return null;}}
+async function readBody(req,max){let size=0;const chunks=[];for await(const chunk of req){size+=chunk.length;if(size>max)throw Object.assign(new Error('too large'),{status:413});chunks.push(chunk);}return Buffer.concat(chunks);}
+// Le constat ne doit contenir que des références « fichier:<empreinte> » : aucune image intégrée.
+function blobRefs(value,found=new Set()){if(typeof value==='string'){if(value.startsWith('data:'))throw Object.assign(new Error('inline'),{status:400});const m=/^fichier:([a-f0-9]{64})$/.exec(value);if(m)found.add(m[1]);}
+  else if(Array.isArray(value))value.forEach(v=>blobRefs(v,found));else if(value&&typeof value==='object')Object.values(value).forEach(v=>blobRefs(v,found));return found;}
+function cleanVisit(visit,ej){const v={...visit};if(ej){v.clientName='';v.clientAddress='';v.attendance=[];if(v.dossier&&typeof v.dossier==='object')v.dossier={...v.dossier,client:''};}return v;}
+function constatSummary(record){const v=record.visit||{};return {draftId:v.draftId,version:record.version,updatedAt:record.updatedAt,status:record.status,caseReference:String(v.caseReference||'').slice(0,100),caseName:String(v.caseName||'').slice(0,200),caseType:v.caseType||'autre',visitDate:v.visitDate||'',photos:Array.isArray(v.photos)?v.photos.length:0,closedAt:v.closedAt||'',savedAt:v.savedAt||'',airtable:record.mirroredVersion===record.version?'copié':record.airtableError?'erreur : '+record.airtableError:'en attente'};}
+async function saveVisit(user,draftId,body){
+  const visit=body.visit;if(!DRAFT_ID.test(draftId)||!visit||typeof visit!=='object'||visit.draftId!==draftId||!Array.isArray(visit.photos))throw Object.assign(new Error('visit'),{status:400});
+  blobRefs(visit);const current=readConstat(user.id,draftId);
+  if(current&&body.force!==true&&Number(body.baseVersion)!==current.version)return {conflict:true,...constatSummary(current)};
+  const ej=visit.caseType==='ej'||visit.dossier?.type==='Expertise judiciaire';
+  const record={version:(current?.version||0)+1,updatedAt:new Date().toISOString(),status:CONSTAT_STATUS.has(body.status)?body.status:'Brouillon',visit:cleanVisit(visit,ej),
+    airtable:current?.airtable||{},mirroredVersion:current?.mirroredVersion||0};
+  writeAtomic(constatPath(user.id,draftId),JSON.stringify(record));
+  scheduleMirror(user.id,draftId,record.status!==current?.status&&record.status!=='Brouillon'?5000:MIRROR_DELAY);
+  return constatSummary(record);}
+function listVisits(userId){const dir=path.join(DATA_DIR,'constats',safeId(userId));let files=[];try{files=fs.readdirSync(dir).filter(f=>f.endsWith('.json'));}catch{}
+  return files.map(f=>{try{return constatSummary(JSON.parse(fs.readFileSync(path.join(dir,f),'utf8')));}catch{return null;}}).filter(Boolean);}
+// Copie lisible dans Airtable
+const mirrorTimers=new Map();
+function scheduleMirror(userId,draftId,delay){const key=userId+'/'+draftId;clearTimeout(mirrorTimers.get(key));
+  const timer=setTimeout(()=>{mirrorTimers.delete(key);mirrorConstat(userId,draftId).catch(error=>{console.error('Copie Airtable du constat :',error.message);const r=readConstat(userId,draftId);if(r){r.airtableError=/429/.test(error.message)?'limite d’appels du forfait Airtable atteinte':/40[13]/.test(error.message)?'jeton Airtable refusé':/422/.test(error.message)?'champ refusé par la table Constats':'Airtable injoignable';try{writeAtomic(constatPath(userId,draftId),JSON.stringify(r));}catch{}}scheduleMirror(userId,draftId,Math.max(MIRROR_DELAY,6e4));});},delay);
+  timer.unref();mirrorTimers.set(key,timer);}
+function frDate(value){return /^\d{4}-\d{2}-\d{2}$/.test(value||'')?value.split('-').reverse().join('/'):'';}
+function readableSummary(v){const lines=[],ej=v.caseType==='ej',clip=(t,n=2000)=>String(t||'').trim().slice(0,n);
+  lines.push(`Type : ${ej?'Expertise judiciaire':v.caseType==='ep'?'Expertise privée':'Constat'} — ${(v.photos||[]).length} photo(s)`);
+  for(const subject of v.subjects||[]){const photos=(v.photos||[]).filter(p=>p.subject===subject);if(!photos.length)continue;lines.push('',`■ ${subject}`);
+    for(const p of photos){lines.push(`  Photo ${p.number}${p.capturedAt?' ('+new Date(p.capturedAt).toLocaleString('fr-FR',{timeZone:'Europe/Paris'})+')':''}`);
+      for(const [key,label] of [['description','Description'],['comment','Commentaires'],['transcript','Transcription']])if(clip(p[key]))lines.push(`    ${label} : ${clip(p[key])}`);}}
+  const actions=(v.actions||[]).filter(a=>clip(a.text));if(actions.length){lines.push('','Suites à donner :');for(const a of actions)lines.push(`  - ${clip(a.type,80)} : ${clip(a.text,500)}${a.recipient?' → '+clip(a.recipient,200):''}${a.date?' (échéance '+frDate(a.date)+')':''}`);}
+  for(const [key,label] of [['presents','Présents'],['expertNote',ej?'Note expertale':'Avis de l’expert'],['missionDetail','Mission'],['conclusions','Conclusions']])if(clip(v[key]))lines.push('',`${label} :`,clip(v[key],5000));
+  return lines.join('\n').slice(0,95000);}
+async function mirrorConstat(userId,draftId){
+  if(config.devUsers&&!env.DEV_MIRROR)return;const record=readConstat(userId,draftId);if(!record||record.mirroredVersion===record.version)return;
+  const v=record.visit,ej=v.caseType==='ej',a=record.airtable;
+  // Dossier Airtable : celui du constat, sinon le dossier du compte portant la même référence (n° de l'expertise).
+  if(!a.projet){const direct=/^rec\w{14}$/.test(v.dossier?.airtableId||'')?v.dossier.airtableId:'';
+    if(direct&&(await userProjectIds(userId)).includes(direct))a.projet=direct;
+    else if(String(v.caseReference||'').trim()){const user=await findUserById(userId);const match=user&&(await listProjectsRaw(user)).find(p=>p.reference.trim().toLowerCase()===String(v.caseReference).trim().toLowerCase());if(match)a.projet=match.airtableId;}}
+  const json=JSON.stringify({version:record.version,visit:v});
+  const title=`${String(v.caseReference||'').trim()||'Sans référence'} — ${ej?'Constat':String(v.caseName||'Constat').trim().slice(0,120)} du ${frDate(v.visitDate)}`;
+  const base={Titre:title.slice(0,200),'Date de visite':/^\d{4}-\d{2}-\d{2}$/.test(v.visitDate||'')?v.visitDate:null,'Lieu visité':String(v.siteAddress||'').slice(0,300),Statut:record.status,
+    'Synthèse':readableSummary(v),'Identifiant appli':draftId,...(Number.isFinite(v.position?.lat)&&Number.isFinite(v.position?.lng)?{Latitude:v.position.lat,Longitude:v.position.lng}:{}),...(a.projet?{Projet:[a.projet]}:{})};
+  const extra={'Référence':String(v.caseReference||'').slice(0,100),'Données appli (JSON)':json.length<=99000?json:`Constat trop volumineux pour Airtable (${json.length} caractères) : version ${record.version} conservée sur le serveur.`,'Mis à jour le':record.updatedAt};
+  const write=async fields=>a.id?airtable('/'+encodeURIComponent(a.id),{method:'PATCH',body:JSON.stringify({fields})},config.constatsTable)
+    :airtable('',{method:'POST',body:JSON.stringify({fields:{...fields,Auteur:[userId]}})},config.constatsTable);
+  let saved;try{saved=await write({...base,...extra});}
+  catch(error){if(!/Airtable 422/.test(error.message))throw error;console.warn('Table Constats : champs Référence / Données appli (JSON) / Mis à jour le absents, copie réduite.');saved=await write(base);}
+  const latest=readConstat(userId,draftId)||record;latest.airtable={...latest.airtable,id:saved.id,projet:a.projet||''};if(latest.version===record.version)latest.mirroredVersion=record.version;delete latest.airtableError;
+  writeAtomic(constatPath(userId,draftId),JSON.stringify(latest));}
+// Au démarrage : copies Airtable restées en attente (conteneur redémarré).
+if(storeReady)setTimeout(()=>{try{for(const user of fs.readdirSync(path.join(DATA_DIR,'constats')))for(const f of fs.readdirSync(path.join(DATA_DIR,'constats',user)))if(f.endsWith('.json')){const r=readConstat(user,f.slice(0,-5));if(r&&r.mirroredVersion!==r.version)scheduleMirror(user,f.slice(0,-5),3e4);}}catch(error){console.warn('Reprise des copies Airtable :',error.message);}},1000).unref();
 async function sessionUser(req,id){if(!sessionTokens(req).some(t=>readToken(t).id===id))return null;const user=await findUserById(id).catch(()=>null);return user&&ALLOWED_STATUS.has(user.status)?user:null;}
 const publicProfile=user=>({id:user.id,name:user.name,email:user.email,organisation:user.organisation,role:user.role,types:ROLE_TYPES[user.role]||['autre']});
 
@@ -168,10 +220,27 @@ async function api(req,res,pathname){
       console.error('Dossiers Airtable :',error.message);return send(res,503,{message:'Airtable indisponible : dossier conservé sur l’appareil.'});}
     return send(res,405,{message:'Méthode non autorisée.'});
   }
-  if(pathname==='/api/constats'&&req.method==='POST'){
-    const body=await readJson(req),user=await sessionUser(req,String(body.profil||''));if(!user)return send(res,401,{message:'Profil non connecté.'});
-    try{return send(res,200,{constat:await saveConstat(user,body)});}
-    catch(error){if(error.status)return send(res,error.status,{message:'Constat invalide.'});console.error('Constats Airtable :',error.message);return send(res,503,{message:'Airtable indisponible : fiche envoyée plus tard.'});}
+  const blobPathMatch=/^\/api\/fichiers\/([a-f0-9]{64})$/.exec(pathname),constatMatch=/^\/api\/constats(?:\/([\w-]{6,60}))?$/.exec(pathname);
+  if(blobPathMatch||constatMatch||pathname==='/api/fichiers/manquants'){
+    const url=new URL(req.url,'http://localhost'),user=await sessionUser(req,String(url.searchParams.get('profil')||''));
+    if(!user)return send(res,401,{message:'Profil non connecté.'});
+    if(!storeReady)return send(res,503,{message:'Sauvegarde serveur indisponible : constat conservé sur l’appareil.'});
+    try{
+      if(pathname==='/api/fichiers/manquants'&&req.method==='POST'){const hashes=JSON.parse(await readBody(req,64e3)||'{}').hashes;if(!Array.isArray(hashes)||hashes.length>2000)return send(res,400,{message:'Liste invalide.'});
+        return send(res,200,{manquants:hashes.filter(h=>HASH.test(h)&&!fs.existsSync(blobPath(user.id,h)))});}
+      if(blobPathMatch&&req.method==='PUT'){const hash=blobPathMatch[1],type=String(req.headers['content-type']||'').split(';')[0].trim();
+        if(!BLOB_TYPE.test(type))return send(res,415,{message:'Type de fichier refusé.'});
+        const data=await readBody(req,40e6);if(crypto.createHash('sha256').update(data).digest('hex')!==hash)return send(res,400,{message:'Empreinte incorrecte.'});
+        if(!fs.existsSync(blobPath(user.id,hash))){writeAtomic(blobPath(user.id,hash)+'.type',type);writeAtomic(blobPath(user.id,hash),data);}
+        return send(res,201,{ok:true});}
+      if(blobPathMatch&&req.method==='GET'){const file=blobPath(user.id,blobPathMatch[1]);let type;try{type=fs.readFileSync(file+'.type','utf8');}catch{return send(res,404,{message:'Fichier absent du serveur.'});}
+        res.writeHead(200,{'Content-Type':BLOB_TYPE.test(type)?type:'application/octet-stream','Cache-Control':'private, max-age=31536000, immutable'});return fs.createReadStream(file).pipe(res);}
+      if(constatMatch&&!constatMatch[1]&&req.method==='GET')return send(res,200,{constats:listVisits(user.id)});
+      if(constatMatch&&constatMatch[1]&&req.method==='GET'){const record=readConstat(user.id,constatMatch[1]);return record?send(res,200,{version:record.version,updatedAt:record.updatedAt,visit:record.visit}):send(res,404,{message:'Constat introuvable.'});}
+      if(constatMatch&&constatMatch[1]&&req.method==='PUT'){let body;try{body=JSON.parse(await readBody(req,4e6));}catch(error){if(error.status)throw error;return send(res,400,{message:'Constat invalide.'});}
+        const result=await saveVisit(user,constatMatch[1],body);return send(res,result.conflict?409:200,{constat:result});}
+    }catch(error){if(error.status)return send(res,error.status,{message:error.status===413?'Fichier trop volumineux.':'Données invalides.'});console.error('Sauvegarde serveur :',error.message);return send(res,500,{message:'Sauvegarde serveur impossible.'});}
+    return send(res,405,{message:'Méthode non autorisée.'});
   }
   if(pathname==='/api/me'&&req.method==='GET'){
     const profiles=[],kept=[];

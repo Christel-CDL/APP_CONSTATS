@@ -6,10 +6,12 @@ const path=require('node:path');
 const JSZip=require('jszip');
 const out=process.env.TEST_OUTPUT||path.join(__dirname,'../../test-results');
 fs.mkdirSync(out,{recursive:true});
+// Explorateur de fichiers (showSaveFilePicker) non pilotable par Playwright : ces tests vérifient le téléchargement classique.
+async function noSavePicker(browser,options){const context=await browser.newContext(options);await context.addInitScript(()=>{delete window.showSaveFilePicker;});return context;}
 (async()=>{
   const browser=await chromium.launch({channel:process.env.PLAYWRIGHT_CHANNEL||'msedge',headless:true});
   try{
-    const context=await browser.newContext({permissions:['camera','microphone','geolocation'],geolocation:{latitude:48.8566,longitude:2.3522,accuracy:7},viewport:{width:1280,height:900}});
+    const context=await noSavePicker(browser,{permissions:['camera','microphone','geolocation'],geolocation:{latitude:48.8566,longitude:2.3522,accuracy:7},viewport:{width:1280,height:900}});
     const page=await context.newPage(),errors=[];
     page.setDefaultTimeout(15000);page.setDefaultNavigationTimeout(20000);
     page.on('pageerror',e=>{errors.push(e.message);console.error('PAGE ERROR',e.message);});

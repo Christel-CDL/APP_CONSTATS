@@ -30,17 +30,17 @@ $('#case-type').addEventListener('change',e=>{const dossier=dossierById(state.do
 document.addEventListener('input',e=>{const key=e.target.dataset?.reportField;if(!key)return;state[key]=e.target.value;saveVisit();});
 $('#hide-nominatif').addEventListener('change',e=>{state.hideNominatif=e.target.checked;saveVisit();});
 for(const id of ['case-reference','visit-date'])$('#'+id).addEventListener('input',renderReportFields);
-$('#export-html').addEventListener('click',()=>{
+$('#export-html').addEventListener('click',async()=>{
   if(visitBusy()){alert('Terminez la capture avant de créer le rapport.');return;}
   if(pvMode()){const pv=state.pv;if(!pvReady(pv))return;
-    download(new Blob([buildPvHtml(pvReportData())],{type:'text/html;charset=utf-8'}),pvFileName(pv.document,state.caseReference,state.visitDate));markTransferred();$('.toast').textContent=PV_DOCUMENTS[pv.document].label+' téléchargé (HTML).';$('.toast').classList.add('show');setTimeout(()=>$('.toast').classList.remove('show'),4500);return;}
+    if(!(await download(new Blob([buildPvHtml(pvReportData())],{type:'text/html;charset=utf-8'}),pvFileName(pv.document,state.caseReference,state.visitDate))))return;markTransferred();$('.toast').textContent=PV_DOCUMENTS[pv.document].label+' enregistré (HTML).';$('.toast').classList.add('show');setTimeout(()=>$('.toast').classList.remove('show'),4500);return;}
   if(!state.photos.length){alert('Ajoutez au moins une photo au constat.');return;}
   if(state.caseType==='ej'&&!isOpalexeReference(state.caseReference)&&!confirm('La référence ne suit pas le format OPALEXE (ex. EJ26-1402). Elle sert de clé pour compléter le bloc nominatif. Générer quand même ?'))return;
   if(state.expertSigns&&!state.expertSignature){alert('Vous avez coché votre signature d’expert : signez, ou décochez la case, avant l’export.');return;}
   const simple=state.caseType==='ep'&&state.pv.document==='simple';
   const html=buildConstatHtml({simple,expertSignature:state.expertSigns?state.expertSignature:null,type:state.caseType,reference:state.caseReference,caseName:state.caseName,visitDate:state.visitDate,photos:state.photos,subjects:state.subjects,actions:collectActions(),position:state.position,hideNominatif:state.hideNominatif,attendance:state.attendance,...Object.fromEntries(REPORT_TEXT_FIELDS.map(key=>[key,reportFieldValue(key)]))});
-  download(new Blob([html],{type:'text/html;charset=utf-8'}),simple?pvFileName('simple',state.caseReference,state.visitDate):reportFileName(state.caseReference,state.visitDate));if(state.caseType==='ep')markTransferred();
-  $('.toast').textContent=state.caseType==='ej'?'Rapport HTML téléchargé — bloc nominatif à compléter hors application.':'Rapport HTML téléchargé.';$('.toast').classList.add('show');setTimeout(()=>$('.toast').classList.remove('show'),4500);
+  if(!(await download(new Blob([html],{type:'text/html;charset=utf-8'}),simple?pvFileName('simple',state.caseReference,state.visitDate):reportFileName(state.caseReference,state.visitDate))))return;if(state.caseType==='ep')markTransferred();
+  $('.toast').textContent=state.caseType==='ej'?'Rapport HTML enregistré — bloc nominatif à compléter hors application.':'Rapport HTML enregistré.';$('.toast').classList.add('show');setTimeout(()=>$('.toast').classList.remove('show'),4500);
 });
 function pvReady(pv){if(!pv.companyName.trim()||!pv.ownerName.trim()){alert('Renseignez l’entreprise et le maître d’ouvrage du procès-verbal.');return false;}
   const stale=staleSignatures(pv);if(stale.length){alert(`Le procès-verbal a été modifié après la signature (${stale.join(', ')}). Faites signer à nouveau, ou effacez ces signatures, avant l’export.`);return false;}
@@ -49,11 +49,12 @@ function pvReportData(){return {expertSignature:state.expertSigns?state.expertSi
 $('#export-pv-word').addEventListener('click',async()=>{
   if(visitBusy()){alert('Terminez la capture avant de créer le procès-verbal.');return;}
   const pv=state.pv;if(!pvReady(pv))return;
+  const name=pvFileName(pv.document,state.caseReference,state.visitDate).replace(/\.html$/,'.docx'),target=await chooseSaveTarget(name);if(target==='cancel')return;
   const button=$('#export-pv-word');button.disabled=true;
   try{const photos=structuredClone(state.photos);for(const p of photos){const image=await loadDrawingImage(p.annotatedSrc||p.src);p.imageWidth=image.naturalWidth;p.imageHeight=image.naturalHeight;if(p.drawing){const note=await loadDrawingImage(p.drawing);p.noteWidth=note.naturalWidth;p.noteHeight=note.naturalHeight;}}
     const attendance=[];for(const src of state.attendance||[]){const image=await loadDrawingImage(src);attendance.push({src,width:image.naturalWidth,height:image.naturalHeight});}
-    download(await buildPvWord({...pvReportData(),photos,attendance}),pvFileName(pv.document,state.caseReference,state.visitDate).replace(/\.html$/,'.docx'));markTransferred();
-    $('.toast').textContent=PV_DOCUMENTS[pv.document].label+' téléchargé (Word).';$('.toast').classList.add('show');setTimeout(()=>$('.toast').classList.remove('show'),4500);
+    if(!(await download(await buildPvWord({...pvReportData(),photos,attendance}),name,{target})))return;markTransferred();
+    $('.toast').textContent=PV_DOCUMENTS[pv.document].label+' enregistré (Word).';$('.toast').classList.add('show');setTimeout(()=>$('.toast').classList.remove('show'),4500);
   }catch(error){console.error(error);alert('Le procès-verbal Word n’a pas pu être créé. Vérifiez les photos et réessayez.');}finally{button.disabled=false;}
 });
 // Profil affiché dans le menu
@@ -65,7 +66,7 @@ function markTransferred(){state.transferHash=transferContentHash();saveVisit();
 function ensureTransferred(){
   if(state.transferHash===transferContentHash())return true;
   if(!confirm('Ces données n’ont pas été exportées depuis leur dernière modification : elles seraient perdues.\n\nOK : télécharger d’abord une sauvegarde complète du constat (fichier JSON), puis poursuivre.\nAnnuler : ne rien effacer.'))return false;
-  download(new Blob([JSON.stringify(snapshot())],{type:'application/json'}),`${(state.caseReference||'constat').replace(/[^\w-]+/g,'-')}_sauvegarde-avant-effacement_${new Date().toISOString().slice(0,10)}.json`);
+  saveFile(new Blob([JSON.stringify(snapshot())],{type:'application/json'}),`${(state.caseReference||'constat').replace(/[^\w-]+/g,'-')}_sauvegarde-avant-effacement_${new Date().toISOString().slice(0,10)}.json`);
   state.transferHash=transferContentHash();
   return confirm('La sauvegarde a été téléchargée. Vérifiez qu’elle figure bien dans vos fichiers (Téléchargements, Fichiers ou OneDrive) avant de poursuivre.\n\nPoursuivre l’effacement ?');
 }

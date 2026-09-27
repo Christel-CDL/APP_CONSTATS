@@ -64,15 +64,28 @@ pas être supprimée), mais elle ne donne accès à rien sans compte autorisé.
 - Supprimer un dossier dans l'application le retire de l'appareil seulement ; il reste dans Airtable.
 - Le jeton Airtable doit avoir `data.records:read` et `data.records:write` sur la base CONSTATS.
 
-## Fiche de suivi des constats (table Constats)
+## Sauvegarde des constats et passage d'un appareil à l'autre
 
-- Chaque constat a une fiche dans la table `Constats`, retrouvée par `Identifiant appli` (identifiant du constat
-  sur l'appareil) : `Titre`, `Date de visite`, `Statut`, `Projet`, `Auteur`, et une `Synthèse` limitée au nombre de
-  photos et au nom du dernier fichier exporté.
-- Statut `Finalisé` dès qu'un rapport (HTML, Word, PDF) est exporté ; `Rapport envoyé` quand le constat est terminé
-  (« ✓ Terminer ce constat ») après un export. Hors connexion, la fiche est envoyée au retour du réseau.
-- Photos, commentaires, feuille de présence et rapports ne sont **jamais** envoyés à Airtable : ils restent sur
-  l'appareil et dans les fichiers exportés (OneDrive).
-- Expertise judiciaire : titre limité à la référence OPALEXE et à la date ; `Lieu visité` toujours vide (contrôlé
-  aussi par le serveur d'après le type du dossier lié).
-- Nom de table modifiable par la variable facultative `AIRTABLE_CONSTATS_TABLE` (défaut `Constats`).
+- Chaque constat est sauvegardé sur le serveur (VPS) quelques secondes après chaque modification ; hors réseau, il
+  l'est au retour de la connexion. Les photos, sons, notes manuscrites et signatures sont stockés sur le VPS
+  (volume Docker `constats-data`, monté sur `/data`), envoyés une seule fois (empreinte SHA-256).
+- Sur un autre appareil connecté au même profil : « Mes brouillons › Sur vos autres appareils » → « Récupérer sur
+  cet appareil ». Au lancement, les constats déjà présents sont mis à jour s'ils ont été modifiés ailleurs.
+- Modification du même constat sur deux appareils : l'application le signale et demande quelle version garder.
+- **Volume obligatoire** : sans le volume `constats-data`, les constats et photos du serveur seraient perdus à chaque
+  redéploiement. Le journal de démarrage l'indique (`DATA_DIR : … aucun volume monté`).
+
+## Copie dans Airtable (table Constats)
+
+- Une fiche par constat, retrouvée par `Identifiant appli` et rattachée au dossier (`Projet`) par son lien, ou à
+  défaut par la `Référence` (n° de l'expertise, référence OPALEXE en expertise judiciaire).
+- Champs : `Titre`, `Référence`, `Date de visite`, `Lieu visité` (adresse du site), `Latitude`/`Longitude`, `Statut`
+  (`Brouillon`, `Finalisé` après un rapport enregistré, `Rapport envoyé` après « Terminer ce constat »), `Synthèse`
+  (texte lisible : sujets, commentaires, suites à donner), `Données appli (JSON)` (copie complète du constat, sans
+  les images), `Mis à jour le`, `Auteur`.
+- Copie différée et regroupée (10 minutes après la dernière modification, quelques secondes après un changement de
+  statut) : le forfait Airtable limite le nombre d'appels API par mois. L'état de la copie est affiché dans
+  « Mes brouillons » (copié, en attente, erreur).
+- Expertise judiciaire : ni donneur d'ordre ni feuille de présence (noms) ne sont envoyés ; l'adresse du site l'est.
+- Les photos ne sont jamais envoyées à Airtable : elles restent sur le VPS et dans les rapports.
+- Variables facultatives : `AIRTABLE_CONSTATS_TABLE` (défaut `Constats`), `MIRROR_DELAY_MS`, `DATA_DIR` (défaut `/data`).

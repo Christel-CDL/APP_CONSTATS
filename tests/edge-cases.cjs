@@ -1,9 +1,11 @@
 const {chromium}=require('playwright');
 const assert=require('node:assert/strict');
+// Explorateur de fichiers (showSaveFilePicker) non pilotable par Playwright : ces tests vérifient le téléchargement classique.
+async function noSavePicker(browser,options){const context=await browser.newContext(options);await context.addInitScript(()=>{delete window.showSaveFilePicker;});return context;}
 (async()=>{
  const b=await chromium.launch({channel:process.env.PLAYWRIGHT_CHANNEL||'msedge',headless:true});
  try{
-  const context=await b.newContext(),page=await context.newPage(),errors=[];
+  const context=await noSavePicker(b,),page=await context.newPage(),errors=[];
   page.setDefaultTimeout(10000);page.on('pageerror',e=>errors.push(e.message));page.on('dialog',d=>d.accept());
   await page.addInitScript(()=>{
     window.requestCount=0;window.stops=0;window.pendingMedia=null;

@@ -10,11 +10,12 @@ function printReport(clean=false){
 async function downloadPdf(clean){
   if(visitBusy()){alert('Terminez la capture avant de créer le rapport.');return;}
   if(!state.photos.length){alert('Ajoutez au moins une photo au constat.');return;}
+  const name=exportBaseName()+(clean?'_photos-seules.pdf':'_rapport-commente.pdf'),target=await chooseSaveTarget(name);if(target==='cancel')return;
   const buttons=[$('#export-pdf'),$('#export-clean-pdf')];buttons.forEach(b=>b.disabled=true);
   try{updateReportContent();const photos=structuredClone(state.photos);for(const photo of photos){photo.pdfSrc=await compressPhoto(photo.annotatedSrc||photo.src);}
     const bytes=await buildConstatPdf({photos,subjects:[...state.subjects],actions:collectActions(),heading:$('.report-top small').textContent+' · '+$('#report-date').textContent,clean});
-    download(new Blob([bytes],{type:'application/pdf'}),exportBaseName()+(clean?'_photos-seules.pdf':'_rapport-commente.pdf'));
-    $('.toast').textContent='PDF téléchargé. Vous pouvez le joindre à votre e-mail.';$('.toast').classList.add('show');setTimeout(()=>$('.toast').classList.remove('show'),4000);
+    if(!(await download(new Blob([bytes],{type:'application/pdf'}),name,{target})))return;
+    $('.toast').textContent='PDF enregistré.';$('.toast').classList.add('show');setTimeout(()=>$('.toast').classList.remove('show'),4000);
   }catch(error){console.error(error);alert('Le PDF n’a pas pu être créé. Vérifiez les photos puis réessayez.');}finally{buttons.forEach(b=>b.disabled=false);}
 }
 $('#export-pdf').addEventListener('click',()=>downloadPdf(false));

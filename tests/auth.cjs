@@ -7,12 +7,14 @@ const users=[{id:'dev-ej',email:'expert.ej@example.com',name:'Expert TEST-EJ',or
   {id:'dev-ep',email:'expert.ep@example.com',name:'Expert TEST-EP',organisation:'Cabinet fictif',role:'Expert',status:'Invité'},
   {id:'dev-off',email:'suspendu@example.com',name:'Compte suspendu',role:'Expert',status:'Suspendu'}];
 const png='data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==';
+// Explorateur de fichiers (showSaveFilePicker) non pilotable par Playwright : ces tests vérifient le téléchargement classique.
+async function noSavePicker(browser,options){const context=await browser.newContext(options);await context.addInitScript(()=>{delete window.showSaveFilePicker;});return context;}
 (async()=>{
   const codes={};let log='';
   const projects=[{id:'dev-p90',owner:'dev-ej',fields:{'Nom du projet':'ZZ EJ AIRTABLE','Référence':'EJ26-0099','Type':{name:'Expertise judiciaire'},'Client / Juridiction':'PARTIE_SECRETE','Commune':'Villefictive','Statut':{name:'En cours'}}},
     {id:'dev-p91',owner:'dev-ej',fields:{'Nom du projet':'ZZ EP DU MAUVAIS PROFIL','Type':{name:'Expertise amiable'}}},
     {id:'dev-p92',owner:'dev-ep',fields:{'Nom du projet':'ZZ EP AIRTABLE','Type':{name:'Expertise amiable'},'Client / Juridiction':'Client EP visible'}}];
-  const server=spawn(process.execPath,[path.join(__dirname,'../server/index.cjs')],{env:{...process.env,PORT:String(PORT),APP_ROOT:path.join(__dirname,'..'),APP_URL:BASE,SESSION_SECRET:'x'.repeat(40),DEV_USERS:JSON.stringify(users),DEV_PROJECTS:JSON.stringify(projects),DEV_LOG_CODES:'1'}});
+  const server=spawn(process.execPath,[path.join(__dirname,'../server/index.cjs')],{env:{...process.env,PORT:String(PORT),APP_ROOT:path.join(__dirname,'..'),APP_URL:BASE,SESSION_SECRET:'x'.repeat(40),DATA_DIR:fs.mkdtempSync(path.join(require('node:os').tmpdir(),'constats-')),DEV_USERS:JSON.stringify(users),DEV_PROJECTS:JSON.stringify(projects),DEV_LOG_CODES:'1'}});
   server.stdout.on('data',d=>{log+=d;for(const m of String(d).matchAll(/Code pour (\S+) : (\d{6})/g))codes[m[1]]=m[2];});server.stderr.on('data',d=>{log+=d;});
   for(let i=0;i<50&&!log.includes('port');i++)await new Promise(r=>setTimeout(r,100));
   const browser=await chromium.launch({channel:process.env.PLAYWRIGHT_CHANNEL||'msedge',headless:true});
@@ -32,7 +34,7 @@ const png='data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAA
     for(let i=0;i<6;i++)assert.equal((await verify('expert.ep@example.com','000000')).status,401);
     assert.equal((await verify('expert.ep@example.com',codes['expert.ep@example.com'])).status,401,'Code invalidé après trop d’essais');
 
-    const context=await browser.newContext({viewport:{width:1280,height:900},acceptDownloads:true});const page=await context.newPage(),problems=[];
+    const context=await noSavePicker(browser,{viewport:{width:1280,height:900},acceptDownloads:true});const page=await context.newPage(),problems=[];
     page.on('pageerror',e=>problems.push(e.message));page.on('console',m=>{if(/Content Security Policy|Refused to/i.test(m.text()))problems.push(m.text());});page.on('dialog',d=>d.accept());
     // Anciens constats de l'appareil (avant les comptes) : proposés au premier profil
     await page.goto(BASE+'/demarrer.html');

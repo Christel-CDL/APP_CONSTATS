@@ -6,15 +6,18 @@ const PORT=8897,BASE=`http://127.0.0.1:${PORT}`;
 const users=[{id:'dev-ej',email:'expert.ej@example.com',name:'Expert TEST-EJ',organisation:'Cabinet fictif',role:'Expert judiciaire',status:'Actif'}];
 const projects=[{id:'dev-p90',owner:'dev-ej',fields:{'Nom du projet':'ZZ EJ AIRTABLE','Référence':'EJ26-0099','Type':{name:'Expertise judiciaire'}}}];
 const png='data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==';
+// Explorateur de fichiers (showSaveFilePicker) non pilotable par Playwright : ces tests vérifient le téléchargement classique.
+async function noSavePicker(browser,options){const context=await browser.newContext(options);await context.addInitScript(()=>{delete window.showSaveFilePicker;});return context;}
 (async()=>{
   const codes={};let log='';
-  const start=()=>{const srv=spawn(process.execPath,[path.join(__dirname,'../server/index.cjs')],{env:{...process.env,PORT:String(PORT),APP_ROOT:path.join(__dirname,'..'),APP_URL:BASE,SESSION_SECRET:'z'.repeat(40),DEV_USERS:JSON.stringify(users),DEV_PROJECTS:JSON.stringify(projects),DEV_LOG_CODES:'1'}});
+  const dataDir=fs.mkdtempSync(path.join(require('node:os').tmpdir(),'constats-'));
+  const start=()=>{const srv=spawn(process.execPath,[path.join(__dirname,'../server/index.cjs')],{env:{...process.env,PORT:String(PORT),APP_ROOT:path.join(__dirname,'..'),APP_URL:BASE,SESSION_SECRET:'z'.repeat(40),DATA_DIR:dataDir,DEV_USERS:JSON.stringify(users),DEV_PROJECTS:JSON.stringify(projects),DEV_LOG_CODES:'1'}});
   srv.stdout.on('data',d=>{log+=d;for(const m of String(d).matchAll(/Code pour (\S+) : (\d{6})/g))codes[m[1]]=m[2];});return srv;};
   let server=start();
   for(let i=0;i<50&&!log.includes('port 8');i++)await new Promise(r=>setTimeout(r,100));
   const browser=await chromium.launch({channel:process.env.PLAYWRIGHT_CHANNEL||'msedge',headless:true});
   try{
-    const context=await browser.newContext({viewport:{width:1180,height:820},acceptDownloads:true});const page=await context.newPage(),errors=[];
+    const context=await noSavePicker(browser,{viewport:{width:1180,height:820},acceptDownloads:true});const page=await context.newPage(),errors=[];
     page.on('pageerror',e=>errors.push(e.message));page.on('dialog',d=>d.accept());
     // 1. En ligne : connexion, synchronisation des dossiers, préparation du hors connexion
     await page.goto(BASE+'/demarrer.html');await page.locator('#email').fill('expert.ej@example.com');await page.locator('#email-form button[type=submit]').click();

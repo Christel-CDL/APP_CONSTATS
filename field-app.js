@@ -38,7 +38,11 @@ function renderSubjects(){$('#subject-tabs').innerHTML=state.subjects.map((s,i)=
 $('#subject-tabs').addEventListener('click',e=>{const b=e.target.closest('[data-subject-index]');if(!b)return;state.activeSubject=state.subjects[Number(b.dataset.subjectIndex)];renderSubjects();renderCaptures();saveVisit();});
 $('#subject-form').addEventListener('submit',e=>{e.preventDefault();const name=addSubject($('#subject-name').value);if(!name)return;state.activeSubject=name;$('#subject-name').value='';renderSubjects();renderCaptures();saveVisit();tell(`Sujet sélectionné : ${name}. Les photos des autres sujets sont conservées dans le même constat.`);});
 function included(photo,field){return photo.include?.[field]!==false;}
-function audioMarkup(photo){return photo.audio?`<audio controls preload="metadata" src="${escapeHtml(photo.audio)}"></audio><a download="note-photo-${photo.number}.${photo.audio.includes('audio/mp4')?'m4a':photo.audio.includes('audio/ogg')?'ogg':'webm'}" href="${escapeHtml(photo.audio)}">Télécharger l’audio de la photo ${photo.number}</a>`:'<p class="muted">Aucun enregistrement sonore.</p>';}
+function audioMarkup(photo){return photo.audio?`<audio controls preload="metadata" src="${escapeHtml(photo.audio)}"></audio><a download="note-photo-${photo.number}.${photo.audio.includes('audio/mp4')?'m4a':photo.audio.includes('audio/ogg')?'ogg':'webm'}" href="${escapeHtml(photo.audio)}">Télécharger l’audio de la photo ${photo.number}</a><button type="button" class="secondary danger delete-audio" data-delete-audio="${escapeHtml(photo.id)}">🗑 Supprimer l’enregistrement sonore</button>`:'<p class="muted">Aucun enregistrement sonore.</p>';}
+// Suppression d'un enregistrement sonore devenu inutile (fiche de capture et synthèse).
+document.addEventListener('click',e=>{const b=e.target.closest('[data-delete-audio]');if(!b)return;const photo=state.photos.find(p=>p.id===b.dataset.deleteAudio);if(!photo?.audio)return;
+  if(recording){alert('Terminez l’enregistrement en cours.');return;}if(!confirm(`Supprimer l’enregistrement sonore de la photo ${photo.number} ?`))return;
+  photo.audio=null;renderCaptures();if(state.currentStep===4)buildReportPreview();saveVisit();tell(`Enregistrement sonore de la photo ${photo.number} supprimé.`);});
 function transcriptStatus(photo){return photo.transcriptStatus||(photo.transcript?'Texte à relire.':'Aucune transcription. Vous pouvez saisir ou coller le texte ci-dessous.');}
 function renderCaptures(){
   const visible=state.photos.filter(p=>p.subject===state.activeSubject);
@@ -100,12 +104,15 @@ const DICTATION_FATAL=['not-allowed','service-not-allowed','audio-capture','lang
 function dictationCommit(session){if(session.segment){session.text=[session.text,session.segment].filter(Boolean).join(' ');session.segment='';}}
 function startDictation(photo){
   if(!speechClass){openTextEditor(photo,'comment',true);return;}
+  // Le micro gardé ouvert pour « Enregistrer un son » empêche la reconnaissance vocale d'Android de l'utiliser :
+  // il est libéré ici et rouvert automatiquement au prochain enregistrement sonore.
+  if(typeof visitAccess!=='undefined')visitAccess.tracks.filter(t=>t.kind==='audio').forEach(t=>t.stop());
   const session={kind:'dictation',photo,stopping:false,text:'',segment:'',quickEnds:0};recording=session;const label=`● Dictée — photo ${photo.number}`;showRecordingBar(label);recordingClock(session,label);renderCaptures();
   $('#recording-live').textContent='Parlez… L’écoute continue jusqu’à « Arrêter ».';
   const android=/Android/i.test(navigator.userAgent);
   const finish=()=>{dictationCommit(session);const text=session.text.trim();
     if(text){photo.comment=[photo.comment?.trim(),text].filter(Boolean).join('\n');photo.transcriptStatus='';}
-    const why=session.error==='network'?'la reconnaissance vocale du navigateur nécessite une connexion Internet. Hors réseau, utilisez « Enregistrer un son » ou la touche micro du clavier':session.error==='not-allowed'||session.error==='service-not-allowed'?'micro refusé : autorisez-le dans les réglages du navigateur':session.error;
+    const why=session.error==='network'?'la reconnaissance vocale du navigateur nécessite une connexion Internet. Hors réseau, utilisez « Enregistrer un son » ou la touche micro du clavier':session.error==='not-allowed'||session.error==='service-not-allowed'?'micro refusé : autorisez-le dans les réglages du navigateur':session.error==='audio-capture'?'micro occupé ou indisponible : fermez les autres applications qui l’utilisent':session.error;
     finishRecording(text?`Dictée ajoutée aux commentaires de la photo ${photo.number}. Relisez-la.${why?' (Écoute interrompue : '+why+'.)':''}`:why?`Dictée interrompue : ${why}.`:'Aucun texte reconnu.');};
   const listen=()=>{const recognition=new speechClass(),started=Date.now();session.recognition=recognition;session.error='';
     recognition.lang='fr-FR';recognition.continuous=!android;recognition.interimResults=true;
@@ -162,28 +169,48 @@ function updateMap(){const choice=$('#map-selection').value,photo=state.photos.f
 function reportLocationsHtml(){const points=state.photos.filter(p=>validPosition(p.position));return points.length?`<h3>Emplacements des prises de vue</h3><ul>${points.map(p=>`<li>Photo ${p.number} — ${escapeHtml(locationLabel(p))} — <a href="${osmLink(p.position)}">Voir sur OpenStreetMap</a></li>`).join('')}</ul>`:'<p>Aucune position de prise de vue enregistrée.</p>';}
 function exportBaseName(){return reportFileName(state.caseReference,state.visitDate).replace(/\.html$/,'');}
 function saveFile(blob,name){const url=URL.createObjectURL(blob),link=document.createElement('a');link.href=url;link.download=name;document.body.append(link);link.click();link.remove();setTimeout(()=>URL.revokeObjectURL(url),30000);}
-// Tout rapport téléchargé est noté dans le constat (« dernier export ») et peut être envoyé aussitôt par la feuille de
-// partage du téléphone ou de l'iPad : OneDrive, Outlook, Gmail, « Enregistrer dans Fichiers »…
-const REPORT_FILE=/\.(html|pdf|docx|json|jpg)$/i;
+// Enregistrement des rapports : pas de téléchargement « à l'aveugle ».
+// - Ordinateur (Chrome, Edge) : l'explorateur s'ouvre pour choisir le dossier (OneDrive de l'expertise) ; il est
+//   ensuite proposé d'office pour la même référence (mémoire du navigateur par expertise).
+// - iPad, téléphone : menu de partage du système → « Enregistrer dans Fichiers » (OneDrive), Outlook, Gmail…
+// - Sinon : téléchargement classique. Le constat note le dernier fichier réellement enregistré ou partagé.
+const TOUCH_DEVICE=navigator.maxTouchPoints>0&&!/Windows/.test(navigator.userAgent);
+const PICKER_TYPES={html:['text/html','Page HTML'],pdf:['application/pdf','Document PDF'],docx:['application/vnd.openxmlformats-officedocument.wordprocessingml.document','Document Word'],json:['application/json','Sauvegarde du constat'],jpg:['image/jpeg','Image JPEG']};
 let sharedFiles=[];
-function download(blob,name,options={}){saveFile(blob,name);if(!REPORT_FILE.test(name))return;
-  if(!/\.jpg$/i.test(name)){state.lastExport={name:String(name).slice(0,200),at:new Date().toISOString()};saveVisit();}
-  const file=typeof File==='function'?new File([blob],name,{type:blob.type||'application/octet-stream'}):null;
-  sharedFiles=options.append?[...sharedFiles,file]:[file];showShareBar();}
+function pickerId(){return ('exp-'+String(state.caseReference||'constats').trim()).replace(/[^\w-]+/g,'-').slice(0,32);}
+// À appeler au clic, avant de préparer le fichier (l'explorateur exige un geste récent de l'utilisateur).
+async function chooseSaveTarget(name){if(TOUCH_DEVICE||typeof window.showSaveFilePicker!=='function')return null;
+  const ext=name.split('.').pop().toLowerCase(),type=PICKER_TYPES[ext];
+  try{return await window.showSaveFilePicker({suggestedName:name,id:pickerId(),startIn:'documents',...(type?{types:[{description:type[1],accept:{[type[0]]:['.'+ext]}}]}:{})});}
+  catch(error){return error?.name==='AbortError'?'cancel':null;}}
+function noteExport(name){if(/\.(html|pdf|docx|json)$/i.test(name)){state.lastExport={name:String(name).slice(0,200),at:new Date().toISOString()};saveVisit();if(typeof renderCloseStatus==='function')renderCloseStatus();}}
 function canShareFiles(files){try{return !!(files.length&&files.every(Boolean)&&navigator.canShare?.({files}));}catch{return false;}}
-function showShareBar(){const bar=$('#share-bar');if(!bar)return;const files=sharedFiles.filter(Boolean);
-  $('#share-text').textContent=`${files.length>1?files.length+' fichiers enregistrés':'« '+(files[0]?.name||'')+' » enregistré'} dans les Téléchargements de l’appareil.`+(canShareFiles(files)?'':' Pour l’envoyer, joignez-le depuis ce dossier.');
-  $('#share-file').hidden=!canShareFiles(files);bar.hidden=false;}
+// Renvoie true quand le fichier est enregistré (ou remis au menu de partage), false s'il reste à enregistrer.
+async function download(blob,name,options={}){
+  let target=options.target;if(target===undefined&&!options.append)target=await chooseSaveTarget(name);
+  if(target==='cancel')return false;
+  if(target){try{const writable=await target.createWritable();await writable.write(blob);await writable.close();noteExport(name);showShareBar(`« ${target.name||name} » enregistré dans le dossier choisi.`,false);return true;}catch(error){console.error(error);}}
+  const file=typeof File==='function'?new File([blob],name,{type:blob.type||'application/octet-stream'}):null;
+  if(TOUCH_DEVICE&&canShareFiles([file])){
+    if(options.append){sharedFiles=[...sharedFiles,file];showShareBar(`${sharedFiles.length} fichier(s) prêt(s).`,true);return false;}
+    sharedFiles=[file];
+    try{await navigator.share({files:[file],title:name});noteExport(name);$('#share-bar').hidden=true;return true;}
+    catch(error){showShareBar(`« ${name} » est prêt. Touchez « Enregistrer… » puis « Enregistrer dans Fichiers » (OneDrive) ou votre messagerie.`,true);return false;}}
+  saveFile(blob,name);noteExport(name);sharedFiles=[file];
+  showShareBar(`« ${name} » enregistré dans les Téléchargements de l’appareil.`,canShareFiles([file]));return true;}
+function showShareBar(text,share){const bar=$('#share-bar');if(!bar)return;$('#share-text').textContent=text;$('#share-file').hidden=!share;$('#share-download').hidden=!share;bar.hidden=false;}
 $('#share-file').addEventListener('click',async()=>{const files=sharedFiles.filter(Boolean);if(!canShareFiles(files))return;
-  try{await navigator.share({files,title:files[0].name});$('#share-bar').hidden=true;}catch(error){if(error?.name!=='AbortError')alert('Partage impossible. Le fichier reste dans les Téléchargements de l’appareil.');}});
+  try{await navigator.share({files,title:files[0].name});files.forEach(f=>noteExport(f.name));$('#share-bar').hidden=true;}catch(error){if(error?.name!=='AbortError')alert('Menu d’enregistrement indisponible : utilisez « Télécharger ».');}});
+$('#share-download').addEventListener('click',()=>{for(const file of sharedFiles.filter(Boolean)){saveFile(file,file.name);noteExport(file.name);}showShareBar('Fichier(s) enregistré(s) dans les Téléchargements de l’appareil.',false);});
 $('#share-close').addEventListener('click',()=>{$('#share-bar').hidden=true;});
 $('#generate-report').addEventListener('click',async()=>{
   if(visitBusy()){alert('Terminez la capture avant de créer le rapport.');return;}
   if(!state.photos.length){alert('Ajoutez au moins une photo au constat.');return;}
+  const name=exportBaseName()+'_reportage-photographique.docx',target=await chooseSaveTarget(name);if(target==='cancel')return;
   const button=$('#generate-report');button.disabled=true;
   try{updateReportContent();const photos=structuredClone(state.photos);for(const p of photos){const image=await loadDrawingImage(p.annotatedSrc||p.src);p.imageWidth=image.naturalWidth;p.imageHeight=image.naturalHeight;if(p.drawing){const note=await loadDrawingImage(p.drawing);p.noteWidth=note.naturalWidth;p.noteHeight=note.naturalHeight;}}
     const blob=await buildConstatWord({photos,subjects:[...state.subjects],actions:collectActions(),heading:reportHeading(),date:state.visitDate});
-    download(blob,exportBaseName()+'_reportage-photographique.docx');$('.toast').textContent='Rapport Word téléchargé (.docx).';$('.toast').classList.add('show');setTimeout(()=>$('.toast').classList.remove('show'),4000);
+    if(await download(blob,name,{target}))$('.toast').textContent='Rapport Word enregistré (.docx).';else return;$('.toast').classList.add('show');setTimeout(()=>$('.toast').classList.remove('show'),4000);
   }catch(error){console.error(error);alert('Le rapport Word n’a pas pu être créé. Vérifiez les photos et réessayez.');}finally{button.disabled=false;}
 });
 const database=new Promise(resolve=>{if(!window.indexedDB||PROFILE.pending){resolve(null);return;}try{const req=indexedDB.open('constat-visits'+PROFILE.suffix,2);req.onupgradeneeded=()=>{if(!req.result.objectStoreNames.contains('visits'))req.result.createObjectStore('visits');if(!req.result.objectStoreNames.contains('drafts'))req.result.createObjectStore('drafts');};req.onsuccess=()=>resolve(req.result);req.onerror=()=>resolve(null);req.onblocked=()=>resolve(null);}catch{resolve(null);}});
@@ -194,7 +221,7 @@ function saveVisit(){if(!ready)return;unsaved=true;++revision;updateSaveState('E
 function persistVisit(){if(!ready)return Promise.resolve();clearTimeout(saveTimer);const version=revision,value=snapshot();saveQueue=saveQueue.catch(()=>{}).then(()=>dbWrite(value)).then(()=>{if(version===revision){unsaved=false;updateSaveState('✓ Brouillon enregistré sur cet appareil');}renderDrafts();return true;}).catch(()=>{updateSaveState('Échec de sauvegarde : conservez une copie avec « Sauvegarder la visite dans un fichier ».',true);return false;});return saveQueue;}
 function normalizeVisit(saved){if(!saved||!Array.isArray(saved.photos)||!Array.isArray(saved.subjects))throw new Error('invalid');const result={...saved,subjects:[...new Set(saved.subjects.filter(s=>typeof s==='string'&&s.trim()).map(s=>s.slice(0,160)))]};if(!result.subjects.length)result.subjects=['Vue générale'];const ids=new Set(),numbers=new Set();result.photos=saved.photos.map((p,i)=>{if(!p||typeof p.src!=='string'||!/^data:image\/(jpeg|png|webp|gif|bmp|avif);/i.test(p.src))throw new Error('invalid image');const photo={id:typeof p.id==='string'&&/^[\w-]+$/.test(p.id)&&!ids.has(p.id)?p.id:createId(),number:Number.isInteger(p.number)&&p.number>0&&!numbers.has(p.number)?p.number:i+1,src:p.src,subject:typeof p.subject==='string'?p.subject.slice(0,160):result.subjects[0],position:validPosition(p.position)?p.position:null,capturedAt:p.capturedAt,captureSource:p.captureSource,include:{...p.include}};while(numbers.has(photo.number))photo.number++;ids.add(photo.id);numbers.add(photo.number);for(const key of ['description','comment','transcript','transcriptStatus'])photo[key]=typeof p[key]==='string'?p[key]:'';for(const key of ['drawing','annotatedSrc'])photo[key]=typeof p[key]==='string'&&/^data:image\/(jpeg|png|webp);/i.test(p[key])?p[key]:'';photo.audio=typeof p.audio==='string'&&/^data:(audio\/|video\/webm)/i.test(p.audio)?p.audio:null;if(!result.subjects.includes(photo.subject))result.subjects.push(photo.subject);return photo;});result.position=validPosition(saved.position)?saved.position:null;result.actions=Array.isArray(saved.actions)?saved.actions.filter(a=>a&&typeof a==='object').map(a=>Object.fromEntries(['type','text','recipient','date'].map(key=>[key,typeof a[key]==='string'?a[key]:'']))):[];return result;}
 function restoreState(value){const saved=normalizeVisit(value);state.draftId=typeof saved.draftId==='string'?saved.draftId:createId();state.subjects=saved.subjects;state.activeSubject=state.subjects.includes(saved.activeSubject)?saved.activeSubject:state.subjects[0];state.photos=saved.photos;state.position=saved.position;state.caseName=typeof saved.caseName==='string'?saved.caseName:caseTitle(saved.caseIndex);state.caseReference=typeof saved.caseReference==='string'?saved.caseReference:'';state.visitDate=/^\d{4}-\d{2}-\d{2}$/.test(saved.visitDate)?saved.visitDate:(saved.savedAt||new Date().toISOString()).slice(0,10);state.dossierId=typeof saved.dossierId==='string'&&dossierById(saved.dossierId)?saved.dossierId:null;state.caseType=REPORT_TYPES[saved.caseType]?saved.caseType:state.dossierId?reportTypeOf(dossierById(state.dossierId).type):'autre';state.hideNominatif=saved.hideNominatif===true;state.pv=state.caseType==='ep'?normalizePv(saved.pv):defaultPv();state.expertSigns=saved.expertSigns===true;state.expertSignature=reportSignatureImage(saved.expertSignature)?{image:saved.expertSignature.image,at:String(saved.expertSignature.at||'').slice(0,40),name:String(saved.expertSignature.name||'').slice(0,200)}:null;state.transferHash=typeof saved.transferHash==='string'?saved.transferHash.slice(0,20):'';state.lastExport=saved.lastExport&&typeof saved.lastExport.name==='string'?{name:saved.lastExport.name.slice(0,200),at:String(saved.lastExport.at||'').slice(0,40)}:null;state.closedAt=typeof saved.closedAt==='string'?saved.closedAt.slice(0,40):'';state.attendance=Array.isArray(saved.attendance)?saved.attendance.filter(reportImage).slice(0,ATTENDANCE_MAX):[];for(const key of REPORT_TEXT_FIELDS)state[key]=typeof saved[key]==='string'?saved[key].slice(0,4000):'';for(const key of REPORT_TEXT_FIELDS)state[key]=reportFieldValue(key);syncDossierPicker();renderCaseDetails();selectCase(Number.isInteger(saved.caseIndex)&&saved.caseIndex>=0&&saved.caseIndex<$$('.case-option').length?saved.caseIndex:0);$('#action-list').innerHTML='';saved.actions.forEach(addAction);if(!$('.action-row'))addAction();renderSubjects();renderCaptures();showPosition();if(state.currentStep===4)buildReportPreview();}
-$('#backup-visit').addEventListener('click',()=>{if(visitBusy()){alert('Terminez la capture ou l’import avant de sauvegarder la visite.');return;}download(new Blob([JSON.stringify(snapshot())],{type:'application/json'}),'constat-sauvegarde.json');if(typeof markTransferred==='function')markTransferred();});
+$('#backup-visit').addEventListener('click',async()=>{if(visitBusy()){alert('Terminez la capture ou l’import avant de sauvegarder la visite.');return;}if(await download(new Blob([JSON.stringify(snapshot())],{type:'application/json'}),exportBaseName()+'_sauvegarde.json')&&typeof markTransferred==='function')markTransferred();});
 $('#restore-visit').addEventListener('click',()=>{if(visitBusy()){alert('Terminez la capture ou l’import avant d’ouvrir une autre visite.');return;}$('#backup-input').click();});
 $('#backup-input').addEventListener('change',async e=>{const file=e.target.files[0];e.target.value='';if(!file)return;if(visitBusy()){alert('Terminez la capture ou l’import avant de changer de visite.');return;}try{const saved=normalizeVisit(JSON.parse(await file.text()));if(state.photos.length&&!confirm('Remplacer la visite affichée par cette sauvegarde ? Conservez d’abord une copie si nécessaire.'))return;visitSwitching=true;try{if(!(await persistVisit()))return;suspendVisitAccess();if(saved.dossier)importDossier(saved.dossier);restoreState(saved);saveVisit();}finally{visitSwitching=false;}}catch{alert('Ce fichier n’est pas une sauvegarde Constat valide. La visite actuelle est conservée.');}});
 window.addEventListener('beforeunload',e=>{if(unsaved||recording||pendingImports||pendingCapture){e.preventDefault();e.returnValue='';}});

@@ -1,36 +1,14 @@
 // Dictée relancée (Android), feuille de présence, fin de constat et fiche Airtable (table Constats).
-// Serveur de développement (node server.cjs, port 8877) + serveur de production lancé ici avec comptes fictifs.
+// Serveur de développement (node server.cjs, port 8877). Sauvegarde serveur et Airtable : tests/sync.cjs.
 const {chromium}=require('playwright');
-const {spawn}=require('node:child_process'),assert=require('node:assert/strict'),path=require('node:path'),fs=require('node:fs');
+const assert=require('node:assert/strict'),path=require('node:path'),fs=require('node:fs');
 const out=process.env.TEST_OUTPUT||path.join(__dirname,'../../test-results');fs.mkdirSync(out,{recursive:true});
+// Explorateur de fichiers (showSaveFilePicker) non pilotable par Playwright : ces tests vérifient le téléchargement classique.
+async function noSavePicker(browser,options){const context=await browser.newContext(options);await context.addInitScript(()=>{delete window.showSaveFilePicker;});return context;}
 (async()=>{
-  // ── API /api/constats (serveur de production, comptes fictifs) ──
-  const PORT=8898,BASE=`http://127.0.0.1:${PORT}`,codes={};let log='';
-  const users=[{id:'dev-ej',email:'expert.ej@example.com',name:'Expert TEST',role:'Expert judiciaire',status:'Actif'},{id:'dev-x',email:'autre@example.com',name:'Autre',role:'Expert judiciaire',status:'Actif'}];
-  const projects=[{id:'dev-p90',owner:'dev-ej',fields:{'Nom du projet':'ZZ EJ','Référence':'EJ26-0099','Type':{name:'Expertise judiciaire'}}},{id:'dev-p91',owner:'dev-x',fields:{'Nom du projet':'ZZ AUTRE','Type':{name:'Expertise judiciaire'}}}];
-  const server=spawn(process.execPath,[path.join(__dirname,'../server/index.cjs')],{env:{...process.env,PORT:String(PORT),APP_ROOT:path.join(__dirname,'..'),APP_URL:BASE,SESSION_SECRET:'x'.repeat(40),DEV_USERS:JSON.stringify(users),DEV_PROJECTS:JSON.stringify(projects),DEV_LOG_CODES:'1'}});
-  server.stdout.on('data',d=>{log+=d;for(const m of String(d).matchAll(/Code pour (\S+) : (\d{6})/g))codes[m[1]]=m[2];});server.stderr.on('data',d=>{log+=d;});
   const browser=await chromium.launch({channel:process.env.PLAYWRIGHT_CHANNEL||'msedge',headless:true});
-  try{
-    for(let i=0;i<50&&!log.includes('port');i++)await new Promise(r=>setTimeout(r,100));
-    const json={'Content-Type':'application/json',Origin:BASE};
-    await fetch(BASE+'/api/auth/request',{method:'POST',headers:json,body:JSON.stringify({email:'expert.ej@example.com'})});
-    for(let i=0;i<30&&!codes['expert.ej@example.com'];i++)await new Promise(r=>setTimeout(r,100));
-    const login=await fetch(BASE+'/api/auth/verify',{method:'POST',headers:json,body:JSON.stringify({email:'expert.ej@example.com',code:codes['expert.ej@example.com']})});
-    const cookie=login.headers.get('set-cookie').split(';')[0];
-    const post=(body,headers={})=>fetch(BASE+'/api/constats',{method:'POST',headers:{...json,Cookie:cookie,...headers},body:JSON.stringify({profil:'dev-ej',...body})});
-    assert.equal((await fetch(BASE+'/api/constats',{method:'POST',headers:json,body:JSON.stringify({profil:'dev-ej',draftId:'abcdef1'})})).status,401,'Sans session : refusé');
-    assert.equal((await post({draftId:'abcdef1'},{Origin:'https://pirate.example'})).status,403,'Autre origine refusée');
-    assert.equal((await post({draftId:'x'})).status,400,'Identifiant invalide');
-    let r=await post({draftId:'visit-001',title:'EJ26-0099 — Constat du 27/09/2026',date:'2026-09-27',status:'Finalisé',kind:'autre',place:'1 rue FICTIVE',projet:'dev-p90',summary:'2 photo(s)'});
-    assert.equal(r.status,200);const first=(await r.json()).constat;assert.equal(first.status,'Finalisé');
-    r=await post({draftId:'visit-001',title:'EJ26-0099 — Constat du 27/09/2026',date:'2026-09-27',status:'Rapport envoyé',projet:'dev-p90'});
-    assert.equal((await r.json()).constat.id,first.id,'Même constat : fiche mise à jour, pas de doublon');
-    r=await post({draftId:'visit-002',title:'X',status:'Inconnu',projet:'dev-p91'});assert.equal((await r.json()).constat.status,'Brouillon','Statut inconnu ramené à Brouillon');
-    // La fiche d'un dossier EJ ne reçoit jamais l'adresse, même si le client l'envoie ; dossier d'un autre compte ignoré.
-  }finally{server.kill();}
   // ── Parcours navigateur (serveur de développement) ──
-  const context=await browser.newContext({viewport:{width:1280,height:900},acceptDownloads:true,permissions:['camera','microphone','geolocation']});
+  const context=await noSavePicker(browser,{viewport:{width:1280,height:900},acceptDownloads:true,permissions:['camera','microphone','geolocation']});
   const page=await context.newPage(),errors=[];page.setDefaultTimeout(15000);
   page.on('pageerror',e=>errors.push(e.message));page.on('dialog',d=>d.accept());
   await page.addInitScript(()=>{
@@ -48,6 +26,9 @@ const out=process.env.TEST_OUTPUT||path.join(__dirname,'../../test-results');fs.
     assert.ok(await page.evaluate(()=>!!recording),'Écoute toujours active après les arrêts spontanés');
     await page.click('#stop-recording');await page.waitForFunction(()=>!recording);
     assert.equal(await page.evaluate(()=>state.photos[0].comment),'fissure en pied de mur côté jardin','Texte provisoire conservé et séquences mises bout à bout');
+    // Suppression d'un enregistrement sonore
+    await page.evaluate(()=>{state.photos[0].audio='data:audio/webm;base64,GkXfow==';renderCaptures();});
+    await page.evaluate(()=>document.querySelector('[data-delete-audio]').click());await page.waitForFunction(()=>state.photos[0].audio===null&&!document.querySelector('[data-delete-audio]'));
     // Feuille de présence (EP) : annexe du rapport HTML
     await page.evaluate(()=>{state.currentStep=4;renderStep();});
     const png=Buffer.from(photo.split(',')[1],'base64');fs.writeFileSync(path.join(out,'feuille.png'),png);
@@ -58,7 +39,7 @@ const out=process.env.TEST_OUTPUT||path.join(__dirname,'../../test-results');fs.
     assert.match(html,/Annexe — Feuille de présence/);assert.match(html,/voir annexe/);
     assert.equal(file.suggestedFilename(),'EJ26-0099_CONSTAT_'+await page.evaluate(()=>state.visitDate)+'.html');
     assert.equal(await page.evaluate(()=>state.lastExport.name),file.suggestedFilename(),'Dernier export noté dans le constat');
-    assert.match(await page.locator('#close-status').innerText(),/Dernier fichier exporté/);
+    assert.match(await page.locator('#close-status').innerText(),/Dernier fichier enregistré/);
     assert.ok(await page.isVisible('#share-bar'),'Barre d’envoi affichée après l’export');
     // EJ : la feuille n'est jamais intégrée au rapport, seulement signalée ; téléchargement séparé
     await page.evaluate(()=>{state.clientName='';state.clientAddress='';state.transferHash=transferContentHash();});
@@ -79,6 +60,6 @@ const out=process.env.TEST_OUTPUT||path.join(__dirname,'../../test-results');fs.
     await page.waitForFunction(id=>!document.querySelector(`[data-delete-draft="${id}"]`),closedId);
     assert.equal((await page.evaluate(()=>listDrafts())).filter(d=>d.draftId===closedId).length,0);
     assert.deepEqual(errors,[]);
-    console.log('PASS: dictation restarted after spontaneous stops (interim text kept), attendance sheet annexed (EP) / separate file only (EJ), last export tracked, share bar, close visit, delete closed draft, /api/constats (session, origin, upsert, status)');
+    console.log('PASS: dictation restarted after spontaneous stops (interim text kept), sound recording deleted, attendance sheet annexed (EP) / separate file only (EJ), last export tracked, share bar, close visit, delete closed draft');
   }finally{await browser.close();}
 })().catch(e=>{console.error(e);process.exit(1);});
