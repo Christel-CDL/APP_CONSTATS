@@ -124,3 +124,10 @@ Le prototype actuel comprend :
 - Cause : sur iPad/iPhone, la reconnaissance vocale du navigateur n'est pas disponible dans une application ajoutée à l'écran d'accueil (limite WebKit), alors qu'elle fonctionne dans un onglet Safari.
 - Correctif : dans l'application installée sur iPad/iPhone, « Dicter un commentaire » ouvre directement le grand champ, curseur placé, pour dicter avec la touche 🎙 du clavier (le micro de la visite est libéré auparavant). Partout ailleurs, une dictée refusée ou sans texte reconnu bascule aussi vers ce champ.
 - Transcription différée des enregistrements sonores : toujours non intégrée (choix du moteur et de l'hébergement à faire, données à garder en Europe).
+
+## Lien avec le tableau de suivi des expertises — 22 octobre 2026
+
+- Table Projets d'Airtable : nouveau champ « Code Constats » ; la formule « Nom du projet » l'affiche lorsqu'il est rempli.
+- Import initial depuis le tableau du 22/10/2026 : 20 dossiers (18 en cours, 1 rapport déposé → Clos, 1 archivé), dont 3 existants mis à jour. Les 3 dossiers « À attribuer » sont ignorés tant que leur n° n'est pas connu.
+- Serveur : le nom saisi pour un dossier est écrit dans « Code Constats » (« Nom du projet » étant une formule, son écriture était refusée par Airtable) ; sans référence, le n° est déduit du code.
+- Reste à faire : mise à jour automatique à partir du tableau (n8n ou tâche planifiée).

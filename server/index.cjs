@@ -77,10 +77,13 @@ const devProjects=env.DEV_PROJECTS?JSON.parse(env.DEV_PROJECTS):[];// tests uniq
 const selectName=v=>typeof v==='string'?v:v?.name||'';
 function projectFrom(record){const f=record.fields||{},airtableType=selectName(f.Type),kind=PROJECT_TYPES[airtableType]||'autre',status=selectName(f.Statut);
   const address=[f['Adresse du site'],[f['Code postal'],f.Commune].filter(Boolean).join(' ')].filter(Boolean).join(', ');
-  return {airtableId:record.id,kind,name:String(f['Nom du projet']||'').slice(0,200),reference:String(f['Référence']||'').slice(0,100),type:airtableType==='Expertise amiable'?'Expertise privée':airtableType||'Autre',
+  return {airtableId:record.id,kind,name:String(f['Code Constats']||f['Nom du projet']||'').slice(0,200),reference:String(f['Référence']||'').slice(0,100),type:airtableType==='Expertise amiable'?'Expertise privée':airtableType||'Autre',
     client:kind==='ep'?String(f['Client / Juridiction']||'').slice(0,200):'',address:address.slice(0,300),status:LOCAL_STATUS.has(status)?status:status==='Archivé'?'Clos':'En cours'};}
 function projectFields(body,kind,creating,userId){const text=(v,max)=>String(v??'').trim().slice(0,max),fields={};
-  if(body.name!==undefined)fields['Nom du projet']=text(body.name,200);if(body.reference!==undefined)fields['Référence']=text(body.reference,100);
+  // « Nom du projet » est une formule dans Airtable (non modifiable) : le nom saisi va dans « Code Constats »,
+  // qui reprend en expertise judiciaire le code du tableau de suivi (EJ24-358_NOM). Sans référence, on en garde le n° (avant « _ »).
+  if(body.name!==undefined)fields['Code Constats']=text(body.name,200);if(body.reference!==undefined)fields['Référence']=text(body.reference,100);
+  if(!fields['Référence']&&creating){const code=/^(EJ[\w-]+?)_/i.exec(fields['Code Constats']||'');if(code)fields['Référence']=code[1].toUpperCase();}
   if(body.address!==undefined)fields['Adresse du site']=text(body.address,300);if(LOCAL_STATUS.has(body.status))fields.Statut=body.status;
   if(LOCAL_TO_AIRTABLE_TYPE[body.type])fields.Type=LOCAL_TO_AIRTABLE_TYPE[body.type];
   if(kind==='ep'&&body.client!==undefined)fields['Client / Juridiction']=text(body.client,200);
