@@ -21,6 +21,7 @@ node tests/pv.cjs
 node tests/auth.cjs
 node tests/offline-auth.cjs
 node tests/cloture.cjs
+node tests/dictation-ios.cjs
 node tests/sync.cjs
 ```
 
@@ -29,6 +30,8 @@ node tests/sync.cjs
 `TEST_OUTPUT` permet de choisir le dossier des résultats. Chaque test navigateur ouvre un profil isolé et le mode `?verification=1`, avec une base IndexedDB distincte. Aucun brouillon utilisateur n'est utilisé. Les flux caméra/audio et la position sont simulés ; le stockage, les pistes médias, les enregistrements et les exports utilisent les API réelles du navigateur.
 
 Les tests couvrent le parcours complet, la reprise, les inclusions DOCX, les fichiers PDF, les rapports longs, le mode hors connexion et plusieurs protections contre les pertes de données. Le contrôle visuel Word et les permissions matérielles sur Safari iPad/Chrome Android restent manuels.
+
+`dictation-ios.cjs` simule l'iPad lancé depuis l'icône de l'écran d'accueil, où la reconnaissance vocale de WebKit ne fonctionne pas : « Dicter » ouvre le grand champ pour la touche micro du clavier. Un refus de la reconnaissance sur un autre navigateur y bascule aussi.
 
 `pv.cjs` enchaîne un PV de réception puis un PV de levée des réserves sur des données fictives.
 

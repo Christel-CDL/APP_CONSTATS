@@ -117,3 +117,10 @@ Le prototype actuel comprend :
 - Service worker limité au dossier de l'application pour rechargement et exports sans réseau après une première ouverture connectée.
 - Protection du brouillon courant en cas d'échec de sauvegarde et avant import d'une autre visite.
 - Tests navigateur, cas d'échec et rapports longs ajoutés au dépôt. Détails et limites actuelles dans REPRISE_DEPLOIEMENT.md.
+
+## Retours terrain — 22 octobre 2026 : note vocale
+
+- Constats de test analysés (8 copies Airtable, 27/09 au 16/10) : aucune transcription ni commentaire dicté depuis l'installation en icône, un seul son enregistré ; les descriptions sont saisies au clavier.
+- Cause : sur iPad/iPhone, la reconnaissance vocale du navigateur n'est pas disponible dans une application ajoutée à l'écran d'accueil (limite WebKit), alors qu'elle fonctionne dans un onglet Safari.
+- Correctif : dans l'application installée sur iPad/iPhone, « Dicter un commentaire » ouvre directement le grand champ, curseur placé, pour dicter avec la touche 🎙 du clavier (le micro de la visite est libéré auparavant). Partout ailleurs, une dictée refusée ou sans texte reconnu bascule aussi vers ce champ.
+- Transcription différée des enregistrements sonores : toujours non intégrée (choix du moteur et de l'hébergement à faire, données à garder en Europe).
