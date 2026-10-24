@@ -92,7 +92,7 @@ async function noSavePicker(browser,options){const context=await browser.newCont
     await page.locator(`[data-open-report="${current}"]`).click();await page.waitForFunction(()=>state.currentStep===4&&$('#inspection').classList.contains('active'));
     assert.ok(await page.locator('#backup-visit').isVisible(),'Copie de secours dans le constat');
     // Suppression d'un brouillon en cours (constat ouvert) : remplacé par un constat vierge
-    await page.evaluate(()=>showPage('constats'));await page.locator(`[data-delete-draft="${current}"]`).click();
+    assert.ok(await page.locator('#delete-current').isVisible(),'Bouton de suppression dans le constat');await page.locator('#delete-current').click();
     let gone=false;for(let i=0;i<60&&!gone;i++){gone=await page.evaluate(async id=>state.draftId!==id&&!(await listDrafts()).some(d=>d.draftId===id),current);if(!gone)await page.waitForTimeout(100);}
     assert.ok(gone,'Brouillon supprimé et remplacé par un constat vierge');
     assert.equal(await page.evaluate(()=>state.photos.length),0);

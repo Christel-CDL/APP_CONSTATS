@@ -145,14 +145,17 @@ async function deleteDraft(draftId){const db=await database;if(!db){localStorage
 async function removeLocalDraft(id){await deleteDraft(id);clearDirty(id);const meta=cloudMeta();delete meta[id];writeMap(CLOUD_KEY,meta);
   // Constat ouvert : un constat vierge le remplace (rien n'est réenregistré).
   if(id===state.draftId){state.photos=[];state.caseName='';state.caseReference='';state.subjects=['Vue générale'];state.closedAt='';$('#action-list').innerHTML='';await startNewVisit();showPage('constats');}}
-$('#draft-list').addEventListener('click',async e=>{const button=e.target.closest('[data-delete-draft]');if(!button)return;const id=button.dataset.deleteDraft;
+async function deleteConstat(id){
   if(visitBusy()){alert('Terminez l’opération en cours (photo, import, enregistrement) avant de supprimer un constat.');return;}
-  const draft=(await listDrafts()).find(d=>d.draftId===id);if(!draft)return;
+  if(id===state.draftId&&unsaved)await persistVisit();
+  const draft=(await listDrafts()).find(d=>d.draftId===id);if(!draft){if(id===state.draftId)alert('Ce constat est vide : il n’y a rien à supprimer.');return;}
   const where=CLOUD?'de tous vos appareils, du serveur et d’Airtable':'de cet appareil';
   if(!confirm(`Supprimer définitivement ce constat ${where} ?\n\nPhotos, notes, sons et feuille de présence seront effacés.\n\n`+(draft.lastExport?`Dernier fichier enregistré : ${draft.lastExport.name}. Vérifiez qu’il est bien rangé dans OneDrive.`:'Aucun rapport n’a été enregistré pour ce constat : son contenu sera PERDU.')))return;
   try{if(CLOUD){const all=deletions();all[id]=Date.now();writeMap(CLOUD_DELETE_KEY,all);}
     await removeLocalDraft(id);renderDrafts();if(CLOUD)scheduleCloud(300);notify(CLOUD?'Constat supprimé ; il sera retiré de vos autres appareils à leur prochaine ouverture.':'Constat supprimé de cet appareil.');}
-  catch{alert('Suppression impossible. Réessayez.');}});
+  catch{alert('Suppression impossible. Réessayez.');}}
+$('#draft-list').addEventListener('click',e=>{const button=e.target.closest('[data-delete-draft]');if(button)deleteConstat(button.dataset.deleteDraft);});
+$('#delete-current')?.addEventListener('click',()=>deleteConstat(state.draftId));
 
 // Feuille de présence photographiée (liste des présents signée sur papier).
 function renderAttendance(){const list=$('#attendance-list');if(!list)return;const ej=state.caseType==='ej',pages=state.attendance||[];

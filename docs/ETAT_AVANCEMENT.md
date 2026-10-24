@@ -135,7 +135,7 @@ Le prototype actuel comprend :
 
 ## Retours d'usage — 24 octobre 2026 : brouillons, accueil, rapports
 
-- Suppression d'un constat possible pour tout brouillon (en cours ou terminé). Elle vaut pour tous les appareils : le constat est effacé du serveur et de sa copie Airtable, puis des autres appareils à leur ouverture suivante (sauf modification non envoyée sur l'un d'eux, qui le recrée). Hors réseau, la suppression est transmise au retour de la connexion.
+- Suppression d’un constat possible pour tout brouillon (en cours ou terminé), depuis « Mes brouillons » ou depuis le constat ouvert (« Supprimer ce constat », en bas de page). Elle vaut pour tous les appareils : le constat est effacé du serveur et de sa copie Airtable, puis des autres appareils à leur ouverture suivante (sauf modification non envoyée sur l'un d'eux, qui le recrée). Hors réseau, la suppression est transmise au retour de la connexion.
 - Accueil : indicateur « Actions à suivre » et encadré « Échéances » retirés (les suites à donner servent au compte rendu et à l'assistant) ; « Reprendre le constat actuel » en tête ; un seul bouton « Nouveau constat » (barre du haut).
 - « Sauvegarder la visite dans un fichier » devient « Copie de secours de ce constat », en bas du constat ; « Ouvrir une sauvegarde » devient « Importer une copie de secours », dans « Mes brouillons ».
 - Onglet « Rapports » : liste des constats avec le dernier fichier enregistré et un accès direct à la synthèse (étape 4) pour produire HTML, Word ou PDF.
