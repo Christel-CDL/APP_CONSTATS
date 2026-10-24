@@ -27,9 +27,9 @@ const remoteValues=d=>({name:d.name,reference:d.reference,type:d.type,client:d.c
 function hiddenRemote(){try{return new Set(JSON.parse(localStorage.getItem(HIDDEN_KEY)||'[]'));}catch{return new Set();}}
 async function projetsApi(method,path='',body,query=''){const res=await fetch('/api/projets'+path+(method==='GET'?'?profil='+encodeURIComponent(PROFILE.id)+query:''),{method,credentials:'same-origin',cache:'no-store',headers:{'Content-Type':'application/json'},body:method==='GET'?undefined:JSON.stringify({...body,profil:PROFILE.id})});
   const data=await res.json().catch(()=>({}));if(!res.ok)throw Object.assign(new Error(data.message||'Synchronisation impossible.'),{status:res.status});return data;}
-// Profil judiciaire : chaque synchronisation fait aussi relire au serveur le tableau de suivi des expertises (OneDrive) ;
-// « Rechercher dans le tableau de suivi » (mode 'force') le relit même s'il n'a pas changé.
-const TABLEAU_SEARCH=DOSSIER_REMOTE&&profileAllows('ej');
+// Chaque synchronisation fait relire au serveur les tableaux de suivi du profil (OneDrive) s'ils ont changé ;
+// « Rechercher dans les tableaux de suivi » (mode 'force') les relit même s'ils n'ont pas changé.
+const TABLEAU_SEARCH=DOSSIER_REMOTE;
 async function syncDossiers(mode){
   if(!DOSSIER_REMOTE||dossierSync.running)return;if(!navigator.onLine){dossierSync.error='Hors connexion : dossiers de l’appareil uniquement.';renderSyncStatus();return;}
   dossierSync.running=true;renderSyncStatus();
@@ -37,12 +37,17 @@ async function syncDossiers(mode){
     for(const local of readDossiers().filter(d=>d.pendingSync)){
       try{const {projet}=local.airtableId?await projetsApi('PATCH','/'+local.airtableId,remoteValues(local)):await projetsApi('POST','',remoteValues(local));
         const list=readDossiers(),d=list.find(x=>x.id===local.id);if(d){d.airtableId=projet.airtableId;delete d.pendingSync;writeDossiers(list);}}
-      catch(error){if(error.status===403||error.status===404||error.status===400){const list=readDossiers(),d=list.find(x=>x.id===local.id);if(d){delete d.pendingSync;d.syncError=error.message;writeDossiers(list);}}else throw error;}
+      catch(error){if(error.status===403||error.status===404||error.status===400||error.status===409){const list=readDossiers(),d=list.find(x=>x.id===local.id);if(d){delete d.pendingSync;d.syncError=error.message;writeDossiers(list);}}else throw error;}
     }
-    const {projets,tableau}=await projetsApi('GET','',undefined,TABLEAU_SEARCH?'&tableau='+(mode==='force'?'force':'1'):''),list=readDossiers(),hidden=hiddenRemote(),now=new Date().toISOString();
+    const {projets,tableau,complet}=await projetsApi('GET','',undefined,TABLEAU_SEARCH?'&tableau='+(mode==='force'?'force':'1'):''),list=readDossiers(),hidden=hiddenRemote(),now=new Date().toISOString();
     dossierSync.tableau=tableau?{...tableau,force:mode==='force'}:null;
-    // Dossier retiré d'Airtable (expertise terminée, retirée du suivi) : retiré aussi de l'appareil ; ses constats restent dans « Mes brouillons ».
-    for(let i=list.length-1;i>=0;i--)if(list[i].airtableId&&!list[i].pendingSync&&!projets.some(p=>p.airtableId===list[i].airtableId))list.splice(i,1);
+    // Même dossier sous une nouvelle clé (passage d'Airtable aux tableaux de suivi) : reconnu par sa référence, il garde son
+    // identifiant local et donc ses constats.
+    for(const p of projets){if(!p.reference||list.some(d=>d.airtableId===p.airtableId))continue;
+      const same=list.find(d=>d.airtableId&&!d.pendingSync&&String(d.reference||'').toUpperCase()===p.reference.toUpperCase()&&!projets.some(q=>q.airtableId===d.airtableId));if(same)same.airtableId=p.airtableId;}
+    // Dossier retiré (expertise terminée, retirée du suivi) : retiré aussi de l'appareil ; ses constats restent dans « Mes brouillons ».
+    // Liste incomplète (tableaux pas encore lus, OneDrive à connecter) : rien n'est retiré.
+    if(complet!==false)for(let i=list.length-1;i>=0;i--)if(list[i].airtableId&&!list[i].pendingSync&&!projets.some(p=>p.airtableId===list[i].airtableId))list.splice(i,1);
     for(const p of projets){if(hidden.has(p.airtableId))continue;const local=list.find(d=>d.airtableId===p.airtableId);
       if(local){if(!local.pendingSync)Object.assign(local,cleanDossier({...local,...p}));}
       else list.push({id:'at-'+p.airtableId,...cleanDossier(p),airtableId:p.airtableId,createdAt:now,updatedAt:now});}
@@ -53,15 +58,15 @@ async function syncDossiers(mode){
 function renderSyncStatus(){const box=$('#dossier-sync');if(!box)return;box.hidden=!DOSSIER_REMOTE;$('#sync-dossiers').hidden=!DOSSIER_REMOTE;$('#sync-dossiers').disabled=dossierSync.running;
   const pending=readDossiers().filter(d=>d.pendingSync).length;
   renderTableauStatus();
-  box.textContent=dossierSync.running?'Synchronisation avec Airtable…':dossierSync.error?`⚠ ${dossierSync.error}${pending?` ${pending} dossier(s) en attente d’envoi.`:''}`:dossierSync.at?`✓ Synchronisé avec Airtable à ${dossierSync.at.toLocaleTimeString('fr-FR',{hour:'2-digit',minute:'2-digit'})}${pending?` · ${pending} en attente`:''}`:'';}
+  box.textContent=dossierSync.running?'Mise à jour des dossiers…':dossierSync.error?`⚠ ${dossierSync.error}${pending?` ${pending} dossier(s) en attente d’envoi.`:''}`:dossierSync.at?`✓ Dossiers à jour à ${dossierSync.at.toLocaleTimeString('fr-FR',{hour:'2-digit',minute:'2-digit'})}${pending?` · ${pending} en attente`:''}`:'';}
 function tableauMessage(t){if(!t)return '';
-  if(t.etat==='ok'){if(t.inchange)return 'Tableau de suivi inchangé depuis la dernière lecture.';const when=t.modifie?` (modifié le ${formatDate(t.modifie,true)})`:'';
-    const changes=[t.ajoutes?`${t.ajoutes} expertise(s) ajoutée(s)`:'',t.misAJour?`${t.misAJour} mise(s) à jour`:'',t.retires?`${t.retires} terminée(s) ou en attente retirée(s)`:''].filter(Boolean).join(', ');
-    return `Tableau de suivi lu${when} : ${changes||'aucun changement'}.${t.force&&!t.ajoutes?' Expertise toujours absente ? Vérifiez dans le tableau son statut (« En cours ») et sa colonne « Code Constats » (format EJ26-1402_NOM), puis enregistrez-le.':''}`;}
+  if(t.etat==='ok'){if(t.inchange)return 'Tableaux de suivi inchangés depuis la dernière lecture.';
+    const lus=(t.tableaux||[]).map(x=>`${x.enCours} ${x.nom} en cours`).join(', '),changes=[t.ajoutes?`${t.ajoutes} dossier(s) ajouté(s)`:'',t.retires?`${t.retires} retiré(s) (plus « En cours »)`:''].filter(Boolean).join(', ');
+    return `Tableaux de suivi lus : ${lus||'aucun'}${changes?' — '+changes:''}.${t.force&&!t.ajoutes?' Dossier toujours absent ? Vérifiez dans le tableau son statut (« En cours ») et sa colonne « Code Constats » (ex. EJ26-1402_NOM, EP26-002_NOM, CS26-016_NOM), puis enregistrez-le.':''}`;}
   return t.message||'';}
 function renderTableauStatus(){for(const id of ['#search-tableau','#picker-search-tableau']){const b=$(id);if(b){b.hidden=!TABLEAU_SEARCH;b.disabled=dossierSync.running;}}
   const t=dossierSync.tableau;for(const box of $$('.tableau-status')){box.hidden=!TABLEAU_SEARCH||!(t||dossierSync.running);
-    box.textContent=dossierSync.running?'Lecture du tableau de suivi…':tableauMessage(t);
+    box.textContent=dossierSync.running?'Lecture des tableaux de suivi…':tableauMessage(t);
     if(t?.etat==='a-connecter'&&!dossierSync.running){const a=document.createElement('a');a.href='/api/microsoft/connexion?profil='+encodeURIComponent(PROFILE.id);a.target='_blank';a.rel='noopener';a.textContent=' Connecter OneDrive';box.append(a);}}}
 $('#sync-dossiers').addEventListener('click',()=>syncDossiers());
 for(const id of ['#search-tableau','#picker-search-tableau'])$(id)?.addEventListener('click',()=>syncDossiers('force'));
@@ -92,34 +97,26 @@ $('#case-dossier').addEventListener('change',e=>applyDossier(e.target.value));
 // Page « Mes dossiers » et tableau de bord
 function renderDossierList(drafts){const list=readDossiers().sort((a,b)=>String(b.updatedAt).localeCompare(String(a.updatedAt)));
   $('#dossier-list').innerHTML=list.length?list.map(d=>{const visits=drafts.filter(v=>v.dossierId===d.id).sort((a,b)=>String(b.savedAt).localeCompare(String(a.savedAt)));
-    return `<article class="dossier-card"><div class="dossier-card-head"><div><h2>${escapeHtml(d.name)}</h2><p>${[d.reference,d.type,d.client].filter(Boolean).map(escapeHtml).join(' · ')}</p>${d.address?`<small>⌖ ${escapeHtml(d.address)}</small>`:''}${DOSSIER_REMOTE?`<small class="sync-flag">${d.pendingSync?'⏳ En attente d’envoi vers Airtable':d.syncError?'⚠ '+escapeHtml(d.syncError):d.airtableId?'✓ Airtable':''}</small>`:''}</div>${statusBadge(d.status)}</div>
-    <div class="dossier-visits">${visits.length?visits.map(v=>`<div class="dossier-visit"><span>${escapeHtml(formatDate(v.visitDate||v.savedAt))} — ${v.photos.length} photo(s)</span><button class="link-btn" data-open-draft="${escapeHtml(v.draftId)}">Reprendre →</button></div>`).join(''):'<p>Aucun constat rattaché pour le moment.</p>'}</div>
-    <div class="dossier-card-actions"><button class="primary" data-dossier-visit="${escapeHtml(d.id)}">＋ Nouveau constat</button><button class="secondary" data-dossier-edit="${escapeHtml(d.id)}">Modifier</button><button class="secondary danger" data-dossier-delete="${escapeHtml(d.id)}">Supprimer</button></div></article>`;}).join('')
+    return `<article class="dossier-card"><div class="dossier-card-head"><div><h2>${escapeHtml(d.name)}</h2><p>${[d.reference,d.type,d.client].filter(Boolean).map(escapeHtml).join(' · ')}</p>${d.address?`<small>⌖ ${escapeHtml(d.address)}</small>`:''}${DOSSIER_REMOTE?`<small class="sync-flag">${d.pendingSync?'⏳ En attente d’envoi':d.syncError?'⚠ '+escapeHtml(d.syncError):/^tab-/.test(d.airtableId||'')?'✓ Tableau de suivi':d.airtableId?'✓ Enregistré sur le serveur':''}</small>`:''}</div>${statusBadge(d.status)}</div>
+    <div class="dossier-visits">${visits.length?visits.map(v=>`<div class="dossier-visit"><span>${escapeHtml(formatDate(v.visitDate||v.savedAt))} — ${v.photos.length} photo(s)${v.closedAt?(typeof storedInOneDrive==='function'&&storedInOneDrive(v)?' · 📁 rangé dans OneDrive':' · terminé'):''}</span><button class="link-btn" data-open-draft="${escapeHtml(v.draftId)}">${v.closedAt?'Rouvrir pour compléter →':'Reprendre →'}</button></div>`).join(''):'<p>Aucun constat rattaché pour le moment.</p>'}</div>
+    <div class="dossier-card-actions"><button class="primary" data-dossier-visit="${escapeHtml(d.id)}">＋ Nouveau constat</button>${/^tab-/.test(d.airtableId||'')?'<small class="muted">Géré dans le tableau de suivi</small>':`<button class="secondary" data-dossier-edit="${escapeHtml(d.id)}">Modifier</button>`}</div></article>`;}).join('')
   :'<div class="empty-panel"><div>▱</div><h2>Aucun dossier pour le moment</h2><p>Créez un dossier pour y rattacher vos constats de terrain.</p><button class="primary" type="button" data-dossier-create>＋ Créer mon premier dossier</button></div>';}
 $('#dossier-list').addEventListener('click',async e=>{const b=e.target.closest('button');if(!b)return;
   if(b.dataset.openDraft){openDraft(b.dataset.openDraft,b);return;}
   if('dossierCreate' in b.dataset){openDossierForm();return;}
   if(b.dataset.dossierEdit){openDossierForm(b.dataset.dossierEdit);return;}
   if(b.dataset.dossierVisit){startNewVisit(b.dataset.dossierVisit);return;}
-  if(b.dataset.dossierDelete){const dossier=dossierById(b.dataset.dossierDelete);if(!dossier)return;const count=(await listDrafts()).filter(v=>v.dossierId===dossier.id).length;
-    if(!confirm(`Supprimer le dossier « ${dossier.name} » de cet appareil ?`+(count?`\n\nSes ${count} constat(s) sont conservés dans « Mes brouillons », sans dossier.`:'')+(dossier.airtableId?'\n\nIl reste enregistré dans Airtable et ne sera plus proposé sur cet appareil.':'')))return;
-    if(dossier.airtableId){const hidden=hiddenRemote();hidden.add(dossier.airtableId);try{localStorage.setItem(HIDDEN_KEY,JSON.stringify([...hidden]));}catch{}}
-    if(writeDossiers(readDossiers().filter(d=>d.id!==dossier.id))){if(state.dossierId===dossier.id){state.dossierId=null;saveVisit();}syncDossierPicker();renderDrafts();}}
+  // Pas de suppression de dossier dans l'application : un dossier disparaît quand il n'est plus « En cours » dans son tableau de suivi.
 });
-function renderDashboard(drafts){const dossiers=readDossiers(),active=dossiers.filter(d=>d.status==='En cours'),today=new Date().toLocaleDateString('en-CA');
+function renderDashboard(drafts){const dossiers=readDossiers(),active=dossiers.filter(d=>d.status==='En cours');
   $('#today-label').textContent=new Date().toLocaleDateString('fr-FR',{weekday:'long',day:'numeric',month:'long'}).toUpperCase();
   $('#dossier-count').textContent=dossiers.length;$('#dossier-count').hidden=!dossiers.length;
   $('#stat-dossiers').textContent=active.length;$('#stat-dossiers-note').textContent=`${dossiers.length} dossier(s) au total`;
   $('#stat-drafts').textContent=drafts.length;$('#stat-drafts-note').textContent=`${drafts.reduce((n,d)=>n+d.photos.length,0)} photo(s)`;
-  const actions=drafts.flatMap(d=>(Array.isArray(d.actions)?d.actions:[]).filter(a=>a&&(a.text||'').trim()).map(a=>({...a,draft:d})));
-  const upcoming=actions.filter(a=>/^\d{4}-\d{2}-\d{2}$/.test(a.date||'')).sort((a,b)=>a.date.localeCompare(b.date));
-  $('#stat-actions').textContent=actions.length;$('#stat-actions-note').textContent=`${upcoming.filter(a=>a.date<today).length} échéance(s) dépassée(s)`;
   const lastActivity=d=>drafts.filter(v=>v.dossierId===d.id).reduce((max,v)=>String(v.savedAt)>max?String(v.savedAt):max,String(d.updatedAt||''));
   const recent=[...dossiers].sort((a,b)=>lastActivity(b).localeCompare(lastActivity(a))).slice(0,5);
   $('#recent-dossiers').innerHTML=recent.length?recent.map(d=>`<tr><td><span class="folder-icon">▰</span><div><b>${escapeHtml(d.name)}</b><small>${escapeHtml(d.reference||'')}</small></div></td><td>${escapeHtml(d.type)}</td><td>${escapeHtml(d.client)}</td><td>${escapeHtml(formatDate(lastActivity(d),true))}</td><td>${statusBadge(d.status)}</td></tr>`).join('')
     :'<tr><td colspan="5" class="empty-row">Aucun dossier. <button class="link-btn" type="button" data-view="dossiers">Créer un dossier →</button></td></tr>';
-  $('#upcoming-actions').innerHTML=upcoming.length?upcoming.slice(0,4).map(a=>{const date=new Date(a.date+'T12:00:00');return `<div class="appointment${a.date<today?' overdue':''}"><div class="date"><b>${date.getDate()}</b><small>${escapeHtml(date.toLocaleDateString('fr-FR',{month:'short'}).toUpperCase())}</small></div><div><span class="time">${escapeHtml(a.type||'Action')}</span><h3>${escapeHtml(a.text)}</h3><p>${escapeHtml(a.draft.caseName||'Constat de terrain')}</p>${a.recipient?`<small>→ ${escapeHtml(a.recipient)}</small>`:''}</div></div>`;}).join('')
-    :'<p class="empty-note">Aucune suite à donner datée. Ajoutez des échéances à l’étape 3 d’un constat.</p>';
   const card=$('#continue-card');card.hidden=!(state.photos.length||state.caseName);
 }
 $('#recent-dossiers').addEventListener('click',e=>{const b=e.target.closest('[data-view]');if(b)showPage(b.dataset.view);});

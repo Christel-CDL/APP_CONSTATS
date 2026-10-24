@@ -62,7 +62,7 @@ async function noSavePicker(browser,options){const context=await browser.newCont
     await page.locator('#dossier-form [name=name]').fill('ZZ NOUVEAU EJ');await page.locator('#dossier-form [name=reference]').fill('EJ26-0100');await page.locator('#dossier-form button[type=submit]').click();
     await page.waitForFunction(()=>{const d=readDossiers().find(x=>x.name==='ZZ NOUVEAU EJ');return d&&d.airtableId&&!d.pendingSync;});
     assert.ok((await page.evaluate(()=>fetch('/api/projets?profil=dev-ej').then(r=>r.json()))).projets.some(p=>p.name==='ZZ NOUVEAU EJ'&&p.reference==='EJ26-0100'));
-    assert.match(await page.locator('#dossier-sync').innerText(),/Synchronisé avec Airtable/);
+    assert.match(await page.locator('#dossier-sync').innerText(),/Dossiers à jour/);
     // Parcours et exports sous la politique de sécurité du contenu
     await page.evaluate(png=>{saveDossier({name:'ZZ DOSSIER EJ',reference:'EJ26-0001',type:'Expertise judiciaire',address:'1 rue Test'});startNewVisit(readDossiers().find(d=>d.name==='ZZ DOSSIER EJ').id);},png);
     await page.waitForFunction(()=>state.caseType==='ej');await page.evaluate(png=>{addPhoto(png,'Vue générale',new Date().toISOString());state.currentStep=4;renderStep();},png);
