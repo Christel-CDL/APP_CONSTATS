@@ -90,9 +90,18 @@ Les tableaux Excel de suivi sont la référence des dossiers ; dès que la lectu
 - **Dossier créé dans l'application** (hors tableau) : conservé sur le serveur, visible sur tous les appareils du
   profil ; il s'efface de lui-même de la liste dès que le tableau contient la même référence. Un dossier issu d'un
   tableau se modifie dans le tableau.
-- **Accès à OneDrive.** Le serveur lit les fichiers avec le compte Microsoft de l'expert, par Microsoft Graph,
-  avec le seul droit délégué `Files.Read` (lecture des fichiers de ce compte ; aucun droit d'écriture). Chaque profil
-  se connecte une fois (« Connecter OneDrive », compte CDL EXPERTISES). Le jeton de renouvellement est chiffré sur le
+- **Rangement à la clôture.** « Terminer ce constat » range le rapport HTML et les photos (avec annotations, notes
+  manuscrites et sons) dans le dossier OneDrive de la mission (lien « Dossier OneDrive » de la ligne du tableau) :
+  `Constats/AAAA-MM-JJ/` (rapport) et `Constats/AAAA-MM-JJ/Photos/` ; un second constat du même jour va dans
+  `AAAA-MM-JJ (2)`. Sans lien « Dossier OneDrive », le constat n'est pas rangé (message). Hors réseau, le rangement
+  se fait au retour de la connexion.
+- **Dossier terminé.** Quand un dossier n'est plus « En cours » dans son tableau, ses constats déjà rangés dans
+  OneDrive sont effacés du serveur et des appareils (photos et sons devenus inutiles compris) ; un constat non rangé
+  est conservé et signalé (« Dossier terminé… »). Les dossiers ne se suppriment pas dans l'application.
+- **Accès à OneDrive.** Le serveur lit les tableaux et range les constats avec le compte Microsoft de l'expert, par
+  Microsoft Graph, avec le droit délégué `Files.ReadWrite` (fichiers de ce compte uniquement ; l'application n'écrit que
+  dans les dossiers `Constats` des missions). Chaque profil se connecte une fois (« Connecter OneDrive », compte
+  CDL EXPERTISES) ; après l'ajout du droit d'écriture (24/10/2026), reconnecter chaque profil une fois. Le jeton de renouvellement est chiffré sur le
   serveur ; s'il est révoqué ou expiré (90 jours sans utilisation), le lien « Connecter OneDrive » réapparaît.
 - **Expertises privées en 2027.** Le tableau est dans « Expertises 2026 » : pour l'année suivante, le déplacer (ou le
   copier) et renseigner `TABLEAU_EP_CHEMIN`, ou le placer dès maintenant directement dans `EXPERTISES`.
@@ -107,7 +116,7 @@ Les tableaux Excel de suivi sont la référence des dossiers ; dès que la lectu
    (locataire)** → `MS_TENANT_ID`.
 3. **Certificats et secrets** → **Nouveau secret client** (24 mois au plus) : copier la **valeur** → `MS_CLIENT_SECRET`.
    Noter la date d'expiration : le secret est à renouveler avant cette date.
-4. **Autorisations d'API** → **Microsoft Graph** → **Autorisations déléguées** : `Files.Read` et `offline_access`
+4. **Autorisations d'API** → **Microsoft Graph** → **Autorisations déléguées** : `Files.ReadWrite` et `offline_access`
    (`User.Read` est présent par défaut).
 5. hPanel → projet `app-constats` : renseigner les trois variables, puis **Déployer**.
 6. Dans l'application, profil judiciaire : « Connecter OneDrive », puis « 🔎 Rechercher dans le tableau de suivi ».

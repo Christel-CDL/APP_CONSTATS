@@ -49,15 +49,13 @@ async function noSavePicker(browser,options){const context=await browser.newCont
     await page.locator('.nav-item[data-view="dashboard"]').click();
     assert.equal(await page.locator('#stat-dossiers').innerText(),'2');
     assert.match(await page.locator('#recent-dossiers').innerText(),/ZZ TEST Résidence/);
-    // Suppression : les constats restent dans les brouillons
+    // Pas de suppression de dossier dans l'application (un dossier disparaît quand il n'est plus « En cours » dans son tableau)
     await page.locator('.nav-item[data-view="dossiers"]').click();
-    const drafts=await page.evaluate(async()=>(await listDrafts()).length);
-    await page.locator('.dossier-card',{hasText:'ZZ TEST Résidence'}).locator('[data-dossier-delete]').click();
-    await page.waitForFunction(()=>readDossiers().length===1);
-    assert.equal(await page.evaluate(async()=>(await listDrafts()).length),drafts);
+    assert.equal(await page.locator('[data-dossier-delete]').count(),0,'Aucun bouton de suppression de dossier');
     // Rechargement : dossiers persistés
+    const count=await page.evaluate(()=>readDossiers().length);
     await page.reload();await page.waitForFunction(()=>typeof ready!=='undefined'&&ready);
-    assert.equal(await page.evaluate(()=>readDossiers().length),1);
+    assert.equal(await page.evaluate(()=>readDossiers().length),count);
     await page.evaluate(()=>importDossier({id:'backup-1',name:'ZZ TEST Import',status:'Clos'}));
     assert.equal(await page.evaluate(()=>dossierById('backup-1')?.status),'Clos','Une sauvegarde recrée son dossier');
     // Expertise judiciaire : aucun champ nominatif conservé, rapport HTML au modèle EJ
@@ -97,6 +95,6 @@ async function noSavePicker(browser,options){const context=await browser.newCont
     assert.ok(gone,'Brouillon supprimé et remplacé par un constat vierge');
     assert.equal(await page.evaluate(()=>state.photos.length),0);
     assert.deepEqual(errors,[]);
-    console.log('PASS: dashboard without fictitious data, dossier create/edit/attach/delete, draft link, backup carries dossier, persistence, EJ without nominative data and HTML report, simplified home (no due dates, single new button, current visit first), reports tab, delete open draft');
+    console.log('PASS: dashboard without fictitious data, dossier create/edit/attach (no delete), draft link, backup carries dossier, persistence, EJ without nominative data and HTML report, simplified home (no due dates, single new button, current visit first), reports tab, delete open draft');
   }finally{await browser.close();}
 })().catch(e=>{console.error(e);process.exit(1);});

@@ -132,7 +132,8 @@ async function readBody(req,max){let size=0;const chunks=[];for await(const chun
 const graph={tenant:env.MS_TENANT_ID||'organizations',clientId:env.MS_CLIENT_ID||'',clientSecret:env.MS_CLIENT_SECRET||'',
   api:(env.GRAPH_API_URL||'https://graph.microsoft.com/v1.0').replace(/\/+$/,''),login:(env.MS_LOGIN_URL||'https://login.microsoftonline.com').replace(/\/+$/,'')};// adresses : tests uniquement
 graph.ready=!!(graph.clientId&&graph.clientSecret&&config.appUrl);
-const GRAPH_SCOPE='offline_access Files.Read';
+// Écriture : rangement des rapports et des photos dans le dossier OneDrive de la mission à la clôture du constat.
+const GRAPH_SCOPE='offline_access Files.ReadWrite';
 const cleanPath=v=>'/'+String(v).replace(/^\/+/,'');
 const TABLEAUX={
   ej:{label:'expertises judiciaires',prefix:'EJ',type:'Expertise judiciaire',file:cleanPath(env.TABLEAU_SUIVI_CHEMIN||'EXPERT JUDICIAIRE/DOSSIERS/Dossiers en cours/Tableau_suivi_expertises.xlsx'),sheet:env.TABLEAU_SUIVI_FEUILLE||'Suivi expertises',nominatif:true},
@@ -231,6 +232,7 @@ async function readTableaux(user,mode){const keys=ROLE_TABLEAUX[user.role]||[];i
       writeDossierStore(user.id,store);const after=composeDossiers(store,keys).map(d=>d.airtableId);
       const result={etat:tableaux.every(t=>t.etat==='ok')?'ok':'erreur',tableaux,ajoutes:after.filter(k=>!before.has(k)).length,retires:[...before].filter(k=>!after.includes(k)).length};
       if(result.etat!=='ok')result.message=tableaux.filter(t=>t.etat!=='ok').map(t=>`${t.nom} : ${t.message}`).join(' ');
+      const ended=[...before].filter(k=>k.startsWith('tab-')&&!after.includes(k)).map(k=>k.slice(4));if(ended.length&&tableaux.every(t=>t.etat==='ok'))await cleanupEndedDossiers(user,ended).catch(error=>console.warn('Nettoyage des dossiers terminés :',error.message));
       st.last=result;st.checkedAt=Date.now();return {store,keys,result};}
     catch(error){console.error('Tableaux de suivi :',error.message);return {store,keys,result:{etat:'erreur',message:'Lecture des tableaux impossible pour le moment.'}};}})();
   try{return await st.running;}finally{st.running=null;}}
@@ -251,7 +253,7 @@ setInterval(()=>{const now=Date.now();for(const [k,v] of msNonces)if(v<now)msNon
 function blobRefs(value,found=new Set()){if(typeof value==='string'){if(value.startsWith('data:'))throw Object.assign(new Error('inline'),{status:400});const m=/^fichier:([a-f0-9]{64})$/.exec(value);if(m)found.add(m[1]);}
   else if(Array.isArray(value))value.forEach(v=>blobRefs(v,found));else if(value&&typeof value==='object')Object.values(value).forEach(v=>blobRefs(v,found));return found;}
 function cleanVisit(visit,ej){const v={...visit};if(ej){v.clientName='';v.clientAddress='';v.attendance=[];if(v.dossier&&typeof v.dossier==='object')v.dossier={...v.dossier,client:''};}return v;}
-function constatSummary(record){const v=record.visit||{};return {draftId:v.draftId,version:record.version,updatedAt:record.updatedAt,status:record.status,caseReference:String(v.caseReference||'').slice(0,100),caseName:String(v.caseName||'').slice(0,200),caseType:v.caseType||'autre',visitDate:v.visitDate||'',photos:Array.isArray(v.photos)?v.photos.length:0,closedAt:v.closedAt||'',savedAt:v.savedAt||'',airtable:record.mirroredVersion===record.version?'copié':record.airtableError?'erreur : '+record.airtableError:'en attente'};}
+function constatSummary(record){const v=record.visit||{};return {draftId:v.draftId,version:record.version,updatedAt:record.updatedAt,status:record.status,caseReference:String(v.caseReference||'').slice(0,100),caseName:String(v.caseName||'').slice(0,200),caseType:v.caseType||'autre',visitDate:v.visitDate||'',photos:Array.isArray(v.photos)?v.photos.length:0,closedAt:v.closedAt||'',savedAt:v.savedAt||'',onedrive:record.onedrive?.ok?{at:record.onedrive.at,fichiers:record.onedrive.fichiers,aJour:record.onedrive.version===record.version}:null,dossierTermine:!!record.dossierTermine,airtable:record.mirroredVersion===record.version?'copié':record.airtableError?'erreur : '+record.airtableError:'en attente'};}
 async function saveVisit(user,draftId,body){
   const visit=body.visit;if(!DRAFT_ID.test(draftId)||!visit||typeof visit!=='object'||visit.draftId!==draftId||!Array.isArray(visit.photos))throw Object.assign(new Error('visit'),{status:400});
   blobRefs(visit);const current=readConstat(user.id,draftId);
@@ -275,6 +277,44 @@ async function deleteVisit(user,draftId){if(!DRAFT_ID.test(draftId))throw Object
   const tombs=readTombs(user.id);tombs[draftId]=new Date().toISOString();writeTombs(user.id,tombs);
   if(/^rec\w{14}$/.test(current?.airtable?.id||'')&&(!config.devUsers||env.DEV_MIRROR))await airtable('/'+encodeURIComponent(current.airtable.id),{method:'DELETE'},config.constatsTable).catch(error=>console.warn('Suppression de la copie Airtable du constat :',error.message));
   return {ok:true};}
+// ── Rangement dans OneDrive à la clôture du constat ─────────────────────────────────────────
+// L'appareil envoie le rapport HTML produit à la clôture ; le serveur le dépose avec les photos (et annotations, notes
+// manuscrites, sons) dans « <dossier OneDrive de la mission>/Constats/AAAA-MM-JJ/ ». Le dossier de la mission est le lien
+// « Dossier OneDrive » de la ligne du tableau de suivi (référence du constat).
+const FILE_EXT={'image/jpeg':'jpg','image/png':'png','image/webp':'webp','image/gif':'gif','image/bmp':'bmp','image/avif':'avif','audio/mp4':'m4a','audio/mpeg':'mp3','audio/ogg':'ogg','audio/webm':'webm','audio/wav':'wav','video/webm':'webm'};
+const slug=v=>String(v||'').normalize('NFD').replace(/[̀-ͯ]/g,'').replace(/[^\w-]+/g,'-').replace(/^-+|-+$/g,'').slice(0,40);
+async function graphUpload(token,file,data,type){const url=graph.api+`/me/drive/root:${drivePath(cleanPath(file))}:`,fail=res=>Object.assign(new Error('Graph '+res.status),{status:res.status});
+  if(data.length<=4e6){const res=await fetch(url+'/content',{method:'PUT',signal:AbortSignal.timeout(120000),headers:{Authorization:`Bearer ${token}`,'Content-Type':type||'application/octet-stream'},body:data});if(!res.ok)throw fail(res);return;}
+  // Fichier volumineux (rapport avec photos intégrées) : session d'envoi par morceaux (multiples de 320 Kio).
+  const session=await fetch(url+'/createUploadSession',{method:'POST',signal:AbortSignal.timeout(30000),headers:{Authorization:`Bearer ${token}`,'Content-Type':'application/json'},body:JSON.stringify({item:{'@microsoft.graph.conflictBehavior':'replace'}})});
+  if(!session.ok)throw fail(session);const {uploadUrl}=await session.json(),size=327680*30;
+  for(let i=0;i<data.length;i+=size){const part=data.subarray(i,i+size),res=await fetch(uploadUrl,{method:'PUT',signal:AbortSignal.timeout(120000),headers:{'Content-Range':`bytes ${i}-${i+part.length-1}/${data.length}`},body:part});if(!res.ok)throw fail(res);}}
+function missionFolder(userId,visit){const ref=String(visit.caseReference||visit.dossier?.reference||'').trim().toUpperCase();if(!ref)return '';
+  return Object.values(readDossierStore(userId).tableaux).flatMap(t=>t.rows||[]).find(r=>r.reference===ref)?.onedrive||'';}
+async function depositVisit(user,draftId,body){const record=readConstat(user.id,draftId);if(!record)throw Object.assign(new Error('absent'),{status:404});
+  const v=record.visit;if(!v.closedAt)throw Object.assign(new Error('Constat non terminé.'),{status:409});
+  const base=missionFolder(user.id,v);if(!base)throw Object.assign(new Error('Pas de dossier OneDrive pour ce constat : vérifiez sa référence et le lien « Dossier OneDrive » de la ligne du tableau de suivi.'),{status:422});
+  const token=await msAccessToken(user.id);if(!token)throw Object.assign(new Error('Connectez OneDrive (droit d’écriture) pour ranger les constats terminés.'),{status:428});
+  // Un dossier par jour de visite ; un second constat du même jour va dans « AAAA-MM-JJ (2) ».
+  const day=/^\d{4}-\d{2}-\d{2}$/.test(v.visitDate||'')?v.visitDate:String(v.closedAt).slice(0,10),used=new Set(listVisits(user.id).filter(c=>c.draftId!==draftId).map(c=>readConstat(user.id,c.draftId)?.onedrive?.folder).filter(Boolean));
+  let folder=`${base}/Constats/${day}`;for(let n=2;used.has(folder);n++)folder=`${base}/Constats/${day} (${n})`;
+  const files=[],name=String(body.name||'').split(/[\\/]/).pop().replace(/[^\w.() -]+/g,'_').slice(0,120);
+  if(typeof body.html==='string'&&body.html.length&&/\.html?$/i.test(name))files.push({path:`${folder}/${name}`,data:Buffer.from(body.html,'utf8'),type:'text/html'});
+  for(const p of v.photos||[])for(const [field,suffix] of [['src',''],['annotatedSrc','_annotee'],['drawing','_note-manuscrite'],['audio','_son']]){const m=/^fichier:([a-f0-9]{64})$/.exec(p[field]||'');if(!m)continue;
+    let type;try{type=fs.readFileSync(blobPath(user.id,m[1])+'.type','utf8');}catch{continue;}
+    files.push({path:`${folder}/Photos/Photo_${String(p.number).padStart(2,'0')}_${slug(p.subject)||'photo'}${suffix}.${FILE_EXT[type]||'bin'}`,file:blobPath(user.id,m[1]),type});}
+  try{for(const f of files)await graphUpload(token,f.path,f.data||fs.readFileSync(f.file),f.type);}
+  catch(error){if(error.status===401||error.status===403)throw Object.assign(new Error('OneDrive refuse l’écriture : reconnectez OneDrive pour accorder le droit d’écriture.'),{status:428});throw error;}
+  const latest=readConstat(user.id,draftId)||record;latest.onedrive={ok:true,at:new Date().toISOString(),folder,fichiers:files.length,version:record.version};delete latest.dossierTermine;
+  writeAtomic(constatPath(user.id,draftId),JSON.stringify(latest));return {fichiers:files.length,dossier:folder.split('/').slice(-3).join('/')};}
+// Dossier terminé ou retiré du tableau de suivi : ses constats déjà rangés dans OneDrive sont effacés du serveur (et des
+// appareils) ; les autres sont conservés et signalés. Fichiers (photos, sons) devenus inutiles effacés (plus d'une heure).
+async function cleanupEndedDossiers(user,refs){if(!refs.length||!storeReady)return;const ended=new Set(refs);
+  for(const c of listVisits(user.id)){const r=readConstat(user.id,c.draftId),ref=String(r?.visit?.caseReference||r?.visit?.dossier?.reference||'').trim().toUpperCase();if(!r||!ended.has(ref))continue;
+    if(r.onedrive?.ok&&r.onedrive.version===r.version)await deleteVisit(user,c.draftId);else if(!r.dossierTermine){r.dossierTermine=true;writeAtomic(constatPath(user.id,c.draftId),JSON.stringify(r));}}
+  const keep=new Set(),dir=path.join(DATA_DIR,'constats',safeId(user.id));try{for(const f of fs.readdirSync(dir))if(f.endsWith('.json')){try{blobRefs(JSON.parse(fs.readFileSync(path.join(dir,f),'utf8')).visit,keep);}catch{}}}catch{}
+  const blobs=path.join(DATA_DIR,'fichiers',safeId(user.id)),limit=Date.now()-36e5;
+  try{for(const f of fs.readdirSync(blobs))if(HASH.test(f)&&!keep.has(f)&&fs.statSync(path.join(blobs,f)).mtimeMs<limit){fs.rmSync(path.join(blobs,f),{force:true});fs.rmSync(path.join(blobs,f)+'.type',{force:true});}}catch{}}
 function listVisits(userId){const dir=path.join(DATA_DIR,'constats',safeId(userId));let files=[];try{files=fs.readdirSync(dir).filter(f=>f.endsWith('.json'));}catch{}
   return files.map(f=>{try{return constatSummary(JSON.parse(fs.readFileSync(path.join(dir,f),'utf8')));}catch{return null;}}).filter(Boolean);}
 // Copie lisible dans Airtable
@@ -363,6 +403,11 @@ async function api(req,res,pathname){
       console.error('Dossiers Airtable :',error.message);return send(res,503,{message:'Airtable indisponible : dossier conservé sur l’appareil.'});}
     return send(res,405,{message:'Méthode non autorisée.'});
   }
+  const depotMatch=/^\/api\/constats\/([\w-]{6,60})\/depot$/.exec(pathname);
+  if(depotMatch&&req.method==='POST'){const user=await sessionUser(req,String(new URL(req.url,'http://localhost').searchParams.get('profil')||''));if(!user)return send(res,401,{message:'Profil non connecté.'});
+    if(!graph.ready||!storeReady)return send(res,503,{message:'Rangement OneDrive non configuré sur le serveur.'});
+    try{let body;try{body=JSON.parse(await readBody(req,40e6));}catch(error){if(error.status)throw error;return send(res,400,{message:'Rapport invalide.'});}return send(res,200,await depositVisit(user,depotMatch[1],body));}
+    catch(error){if(error.status&&error.status<500)return send(res,error.status,{message:error.status===413?'Rapport trop volumineux.':error.message});console.error('Rangement OneDrive :',error.message);return send(res,502,{message:'Rangement dans OneDrive impossible pour le moment.'});}}
   const blobPathMatch=/^\/api\/fichiers\/([a-f0-9]{64})$/.exec(pathname),constatMatch=/^\/api\/constats(?:\/([\w-]{6,60}))?$/.exec(pathname);
   if(blobPathMatch||constatMatch||pathname==='/api/fichiers/manquants'){
     const url=new URL(req.url,'http://localhost'),user=await sessionUser(req,String(url.searchParams.get('profil')||''));

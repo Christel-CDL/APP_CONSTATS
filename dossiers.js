@@ -37,7 +37,7 @@ async function syncDossiers(mode){
     for(const local of readDossiers().filter(d=>d.pendingSync)){
       try{const {projet}=local.airtableId?await projetsApi('PATCH','/'+local.airtableId,remoteValues(local)):await projetsApi('POST','',remoteValues(local));
         const list=readDossiers(),d=list.find(x=>x.id===local.id);if(d){d.airtableId=projet.airtableId;delete d.pendingSync;writeDossiers(list);}}
-      catch(error){if(error.status===403||error.status===404||error.status===400){const list=readDossiers(),d=list.find(x=>x.id===local.id);if(d){delete d.pendingSync;d.syncError=error.message;writeDossiers(list);}}else throw error;}
+      catch(error){if(error.status===403||error.status===404||error.status===400||error.status===409){const list=readDossiers(),d=list.find(x=>x.id===local.id);if(d){delete d.pendingSync;d.syncError=error.message;writeDossiers(list);}}else throw error;}
     }
     const {projets,tableau,complet}=await projetsApi('GET','',undefined,TABLEAU_SEARCH?'&tableau='+(mode==='force'?'force':'1'):''),list=readDossiers(),hidden=hiddenRemote(),now=new Date().toISOString();
     dossierSync.tableau=tableau?{...tableau,force:mode==='force'}:null;
@@ -97,19 +97,16 @@ $('#case-dossier').addEventListener('change',e=>applyDossier(e.target.value));
 // Page « Mes dossiers » et tableau de bord
 function renderDossierList(drafts){const list=readDossiers().sort((a,b)=>String(b.updatedAt).localeCompare(String(a.updatedAt)));
   $('#dossier-list').innerHTML=list.length?list.map(d=>{const visits=drafts.filter(v=>v.dossierId===d.id).sort((a,b)=>String(b.savedAt).localeCompare(String(a.savedAt)));
-    return `<article class="dossier-card"><div class="dossier-card-head"><div><h2>${escapeHtml(d.name)}</h2><p>${[d.reference,d.type,d.client].filter(Boolean).map(escapeHtml).join(' · ')}</p>${d.address?`<small>⌖ ${escapeHtml(d.address)}</small>`:''}${DOSSIER_REMOTE?`<small class="sync-flag">${d.pendingSync?'⏳ En attente d’envoi vers Airtable':d.syncError?'⚠ '+escapeHtml(d.syncError):d.airtableId?'✓ Airtable':''}</small>`:''}</div>${statusBadge(d.status)}</div>
+    return `<article class="dossier-card"><div class="dossier-card-head"><div><h2>${escapeHtml(d.name)}</h2><p>${[d.reference,d.type,d.client].filter(Boolean).map(escapeHtml).join(' · ')}</p>${d.address?`<small>⌖ ${escapeHtml(d.address)}</small>`:''}${DOSSIER_REMOTE?`<small class="sync-flag">${d.pendingSync?'⏳ En attente d’envoi':d.syncError?'⚠ '+escapeHtml(d.syncError):/^tab-/.test(d.airtableId||'')?'✓ Tableau de suivi':d.airtableId?'✓ Enregistré sur le serveur':''}</small>`:''}</div>${statusBadge(d.status)}</div>
     <div class="dossier-visits">${visits.length?visits.map(v=>`<div class="dossier-visit"><span>${escapeHtml(formatDate(v.visitDate||v.savedAt))} — ${v.photos.length} photo(s)</span><button class="link-btn" data-open-draft="${escapeHtml(v.draftId)}">Reprendre →</button></div>`).join(''):'<p>Aucun constat rattaché pour le moment.</p>'}</div>
-    <div class="dossier-card-actions"><button class="primary" data-dossier-visit="${escapeHtml(d.id)}">＋ Nouveau constat</button><button class="secondary" data-dossier-edit="${escapeHtml(d.id)}">Modifier</button><button class="secondary danger" data-dossier-delete="${escapeHtml(d.id)}">Supprimer</button></div></article>`;}).join('')
+    <div class="dossier-card-actions"><button class="primary" data-dossier-visit="${escapeHtml(d.id)}">＋ Nouveau constat</button>${/^tab-/.test(d.airtableId||'')?'<small class="muted">Géré dans le tableau de suivi</small>':`<button class="secondary" data-dossier-edit="${escapeHtml(d.id)}">Modifier</button>`}</div></article>`;}).join('')
   :'<div class="empty-panel"><div>▱</div><h2>Aucun dossier pour le moment</h2><p>Créez un dossier pour y rattacher vos constats de terrain.</p><button class="primary" type="button" data-dossier-create>＋ Créer mon premier dossier</button></div>';}
 $('#dossier-list').addEventListener('click',async e=>{const b=e.target.closest('button');if(!b)return;
   if(b.dataset.openDraft){openDraft(b.dataset.openDraft,b);return;}
   if('dossierCreate' in b.dataset){openDossierForm();return;}
   if(b.dataset.dossierEdit){openDossierForm(b.dataset.dossierEdit);return;}
   if(b.dataset.dossierVisit){startNewVisit(b.dataset.dossierVisit);return;}
-  if(b.dataset.dossierDelete){const dossier=dossierById(b.dataset.dossierDelete);if(!dossier)return;const count=(await listDrafts()).filter(v=>v.dossierId===dossier.id).length;
-    if(!confirm(`Supprimer le dossier « ${dossier.name} » de cet appareil ?`+(count?`\n\nSes ${count} constat(s) sont conservés dans « Mes brouillons », sans dossier.`:'')+(dossier.airtableId?'\n\nIl reste enregistré dans Airtable et ne sera plus proposé sur cet appareil.':'')))return;
-    if(dossier.airtableId){const hidden=hiddenRemote();hidden.add(dossier.airtableId);try{localStorage.setItem(HIDDEN_KEY,JSON.stringify([...hidden]));}catch{}}
-    if(writeDossiers(readDossiers().filter(d=>d.id!==dossier.id))){if(state.dossierId===dossier.id){state.dossierId=null;saveVisit();}syncDossierPicker();renderDrafts();}}
+  // Pas de suppression de dossier dans l'application : un dossier disparaît quand il n'est plus « En cours » dans son tableau de suivi.
 });
 function renderDashboard(drafts){const dossiers=readDossiers(),active=dossiers.filter(d=>d.status==='En cours');
   $('#today-label').textContent=new Date().toLocaleDateString('fr-FR',{weekday:'long',day:'numeric',month:'long'}).toUpperCase();

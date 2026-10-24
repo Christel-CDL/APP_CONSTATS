@@ -9,13 +9,14 @@ const FILES={'/EXPERT%20JUDICIAIRE/DOSSIERS/Dossiers%20en%20cours/Tableau_suivi_
   '/EXPERTISES/Expertises%202026/Tableau_suivi_expertises_privees.xlsx':fixture('tableau-ep.xlsx'),'/DEV-CONSULT/Tableau_suivi_missions_conseil.xlsx':fixture('tableau-cs.xlsx')};
 (async()=>{
   // Faux Microsoft : jetons OAuth (un jeu par compte) et Graph (métadonnées et contenu des fichiers).
-  const ms={tokens:[],downloads:0,etag:'"v1"',access:new Set(),refresh:new Set()};
+  const ms={tokens:[],downloads:0,etag:'"v1"',access:new Set(),refresh:new Set(),uploads:[]};
   const fake=http.createServer((req,res)=>{let body='';req.on('data',c=>body+=c);req.on('end',()=>{const json=(status,data)=>{res.writeHead(status,{'Content-Type':'application/json'});res.end(JSON.stringify(data));};
     if(req.url.endsWith('/oauth2/v2.0/token')){const p=new URLSearchParams(body);ms.tokens.push(Object.fromEntries(p));
       if(p.get('grant_type')==='authorization_code'&&p.get('code')!=='CODE-OK')return json(400,{error:'invalid_grant'});
       if(p.get('grant_type')==='refresh_token'&&!ms.refresh.has(p.get('refresh_token')))return json(400,{error:'invalid_grant'});
       const n=ms.tokens.length;ms.access.add('acc-'+n);ms.refresh.add('ref-'+n);return json(200,{access_token:'acc-'+n,refresh_token:'ref-'+n,expires_in:61});}
     if(!ms.access.has(String(req.headers.authorization).replace('Bearer ','')))return json(401,{error:'bad token'});
+    if(req.method==='PUT'){const u=/^\/v1\.0\/me\/drive\/root:(.+):\/content$/.exec(req.url);ms.uploads.push({path:decodeURIComponent(u[1]),size:Buffer.byteLength(body),type:req.headers['content-type'],body});return json(201,{id:'x'});}
     const m=/^\/v1\.0\/me\/drive\/root:(.+?)(:\/content)?$/.exec(req.url),file=m&&FILES[m[1]];if(!file)return json(404,{error:'not found'});
     if(m[2]){ms.downloads++;res.writeHead(200,{'Content-Type':'application/octet-stream'});return res.end(file);}
     json(200,{eTag:ms.etag,lastModifiedDateTime:'2026-10-24T08:15:00Z'});});}).listen(MS);
@@ -48,7 +49,7 @@ const FILES={'/EXPERT%20JUDICIAIRE/DOSSIERS/Dossiers%20en%20cours/Tableau_suivi_
     // Connexion : droit de lecture seul, choix du compte, état signé à usage unique
     const {auth,state}=await connect(page,'dev-ej');
     assert.equal(auth.origin+auth.pathname,`http://127.0.0.1:${MS}/tenant-test/oauth2/v2.0/authorize`);
-    assert.equal(auth.searchParams.get('scope'),'offline_access Files.Read');assert.equal(auth.searchParams.get('redirect_uri'),BASE+'/api/microsoft/retour');
+    assert.equal(auth.searchParams.get('scope'),'offline_access Files.ReadWrite');assert.equal(auth.searchParams.get('redirect_uri'),BASE+'/api/microsoft/retour');
     assert.equal(auth.searchParams.get('login_hint'),null,'Adresse du compte Constats non imposée');assert.equal(auth.searchParams.get('prompt'),'select_account');
     assert.match(await (await fetch(BASE+'/api/microsoft/retour?code=CODE-OK&state=x'+state)).text(),/non aboutie/,'État falsifié refusé');
     assert.match(await (await fetch(BASE+'/api/microsoft/retour?code=CODE-OK&state='+encodeURIComponent(state))).text(),/OneDrive connecté/,'Retour accepté sans cookie (iPad : ouvert hors de l’application)');
@@ -92,7 +93,27 @@ const FILES={'/EXPERT%20JUDICIAIRE/DOSSIERS/Dossiers%20en%20cours/Tableau_suivi_
     assert.equal(store.tableaux.ep.rows[0].onedrive,'EXPERTISES/Expertises 2026/ALPHA Dossier','Dossier OneDrive (lien web) retenu sur le serveur');
     assert.equal(store.tableaux.cs.rows[0].onedrive,'DEV-CONSULT/GAMMA','Dossier OneDrive (chemin Windows) retenu sur le serveur');
     assert.match(await ep.evaluate(()=>tableauMessage(dossierSync.tableau)),/1 expertises privées en cours, 1 missions de conseil en cours/);
+    // ── Clôture d'un constat : rapport et photos rangés dans le dossier OneDrive de la mission ──
+    const png='data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==';
+    const draftId=await ep.evaluate(async src=>{await startNewVisit(readDossiers().find(d=>d.name==='EP26-001_ALPHA').id);addPhoto(src,'Vue générale',new Date().toISOString(),null,'import');state.photos[0].description='Fissure';saveVisit();return state.draftId;},png);
+    await ep.evaluate(()=>{state.currentStep=4;renderStep();});await ep.click('#close-visit');
+    for(let i=0;i<200&&!ms.uploads.some(u=>u.path.endsWith('.png'));i++)await ep.waitForTimeout(100);
+    const day=await ep.evaluate(id=>listDrafts().then(l=>l.find(d=>d.draftId===id).visitDate),draftId),folder='/EXPERTISES/Expertises 2026/ALPHA Dossier/Constats/'+day;
+    const report=ms.uploads.find(u=>u.path.startsWith(folder+'/')&&u.path.endsWith('.html'));assert.ok(report,'Rapport HTML rangé dans le dossier de la mission');assert.match(report.body,/Fissure/);
+    assert.ok(ms.uploads.some(u=>u.path===folder+'/Photos/Photo_01_Vue-generale.png'),'Photo rangée dans Photos/');
+    let stored=false;for(let i=0;i<100&&!stored;i++){stored=await ep.evaluate(id=>listDrafts().then(l=>!!l.find(d=>d.draftId===id)?.storedInOneDrive&&!Object.keys(deposits()).length),draftId);if(!stored)await ep.waitForTimeout(100);}
+    assert.ok(stored,'Constat marqué rangé ; rapport de clôture retiré de l’appareil');
+    assert.ok(!(await ep.evaluate(id=>listDrafts().then(l=>'closureReport' in l.find(d=>d.draftId===id)),draftId)));
+    assert.equal(JSON.parse(fs.readFileSync(path.join(dataDir,'constats','dev-ep',draftId+'.json'),'utf8')).onedrive.fichiers,2);
+    // ── Dossier passé « Terminé » dans le tableau : constat rangé effacé du serveur, puis de l'appareil ──
+    FILES['/EXPERTISES/Expertises%202026/Tableau_suivi_expertises_privees.xlsx']=fixture('tableau-ep-termine.xlsx');ms.etag='"v2"';
+    await ep.evaluate(()=>syncDossiers('force'));await ep.waitForFunction(()=>!dossierSync.running&&dossierSync.tableau?.etat==='ok'&&!readDossiers().some(d=>d.name==='EP26-001_ALPHA'));
+    assert.ok(!fs.existsSync(path.join(dataDir,'constats','dev-ep',draftId+'.json')),'Constat du dossier terminé effacé du serveur');
+    await ep.reload();await ep.waitForFunction(()=>typeof ready!=='undefined'&&ready);
+    let gone=false;for(let i=0;i<150&&!gone;i++){gone=await ep.evaluate(async id=>!(await listDrafts()).some(d=>d.draftId===id),draftId).catch(()=>false);if(!gone)await ep.waitForTimeout(100);}
+    assert.ok(gone,'Constat retiré de l’appareil');
+    assert.equal(await ep.locator('[data-dossier-delete]').count(),0,'Aucune suppression de dossier dans l’application');
     assert.deepEqual(errors,[]);
-    console.log('PASS: OneDrive connection (read-only scope, account choice, signed single-use state, encrypted refresh token), dossiers read directly from the tracking tables (no Airtable): EJ profile = EJ table, private profile = EP + consulting tables, « En cours » only, code/n° only for EJ, existing dossier re-keyed by reference, nothing removed before first read, manual dossiers kept on server, unchanged file not re-read, revoked access');
+    console.log('PASS: OneDrive connection (Files.ReadWrite scope, account choice, signed single-use state, encrypted refresh token), dossiers read directly from the tracking tables (no Airtable): EJ profile = EJ table, private profile = EP + consulting tables, « En cours » only, code/n° only for EJ, existing dossier re-keyed by reference, nothing removed before first read, manual dossiers kept on server, unchanged file not re-read, revoked access, report and photos stored in the mission OneDrive folder at closure, ended dossier cleans its stored constats (server and device), no dossier deletion in the app');
   }finally{await browser.close();server.kill();fake.close();}
 })().catch(error=>{console.error(error);process.exit(1);});

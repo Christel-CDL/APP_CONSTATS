@@ -145,3 +145,9 @@ Le prototype actuel comprend :
 - Tableaux créés dans OneDrive : `EXPERTISES/Expertises 2026/Tableau_suivi_expertises_privees.xlsx` (4 dossiers 2026 pré-remplis) et `DEV-CONSULT/Tableau_suivi_missions_conseil.xlsx` (21 dossiers clients pré-remplis), codes proposés, statuts à renseigner par Christel.
 - Le serveur compose la liste des dossiers à partir des tableaux (profil judiciaire : tableau EJ ; profil expertise privée : tableaux EP et conseil), sans la table Projets d'Airtable. Dossiers existants reconnus par leur référence (constats toujours rattachés). Dossiers créés dans l'application conservés sur le serveur.
 - Restent sur Airtable : comptes de connexion (étape 3) et copie des constats (remplacée à l'étape 2 par le rangement des rapports et des photos dans OneDrive, droit d'écriture à accorder).
+
+## Sortie d'Airtable — étape 2 (24 octobre 2026) : rangement dans OneDrive
+
+- À la clôture d'un constat, le rapport HTML (modèle CDL ou PV) et les photos sont rangés dans le dossier OneDrive de la mission (`Constats/AAAA-MM-JJ/`, photos dans `Photos/`). Droit délégué `Files.ReadWrite` ajouté dans Microsoft Entra par Christel ; chaque profil doit reconnecter OneDrive une fois.
+- Dossier terminé ou retiré du tableau : ses constats rangés sont effacés du serveur et des appareils ; les autres sont signalés. Suppression de dossier retirée de l'application.
+- La copie des constats dans Airtable reste active jusqu'à l'étape 3 (comptes sur le serveur, arrêt d'Airtable).

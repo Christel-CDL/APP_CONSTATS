@@ -13,7 +13,7 @@ function dataUrlParts(src){const comma=src.indexOf(','),head=src.slice(5,comma),
 function dataUrlBlob(src){const {type,bytes}=dataUrlParts(src);return new Blob([bytes],{type});}
 function frenchDate(value){return /^\d{4}-\d{2}-\d{2}$/.test(value||'')?value.split('-').reverse().join('/'):'';}
 
-const CLOUD=DOSSIER_REMOTE,CLOUD_KEY='constat-cloud'+PROFILE.suffix,CLOUD_DIRTY_KEY=CLOUD_KEY+'-a-envoyer',CLOUD_DELETE_KEY=CLOUD_KEY+'-a-supprimer';
+const CLOUD=DOSSIER_REMOTE,CLOUD_KEY='constat-cloud'+PROFILE.suffix,CLOUD_DIRTY_KEY=CLOUD_KEY+'-a-envoyer',CLOUD_DELETE_KEY=CLOUD_KEY+'-a-supprimer',CLOUD_DEPOSIT_KEY=CLOUD_KEY+'-a-ranger';
 const readMap=key=>{try{const v=JSON.parse(localStorage.getItem(key)||'{}');return v&&typeof v==='object'?v:{};}catch{return {};}};
 const writeMap=(key,value)=>{try{localStorage.setItem(key,JSON.stringify(value));}catch{}};
 const cloudMeta=()=>readMap(CLOUD_KEY);
@@ -21,7 +21,7 @@ function setCloudMeta(id,patch){const all=cloudMeta();all[id]={...all[id],...pat
 const dirtyIds=()=>readMap(CLOUD_DIRTY_KEY);
 function markDirty(id){const all=dirtyIds();all[id]=Date.now();writeMap(CLOUD_DIRTY_KEY,all);}
 function clearDirty(id,stamp){const all=dirtyIds();if(stamp===undefined||all[id]===stamp){delete all[id];writeMap(CLOUD_DIRTY_KEY,all);}}
-const deletions=()=>readMap(CLOUD_DELETE_KEY);
+const deletions=()=>readMap(CLOUD_DELETE_KEY),deposits=()=>readMap(CLOUD_DEPOSIT_KEY);
 const cloud={running:false,timer:null,error:'',remote:null,remoteAt:0,deleted:[]};
 async function cloudFetch(path,options={}){const res=await fetch(path+(path.includes('?')?'&':'?')+'profil='+encodeURIComponent(PROFILE.id),{credentials:'same-origin',cache:'no-store',...options});
   if(res.status===401)throw Object.assign(new Error('Session expirée : reconnectez ce profil depuis l’écran de lancement.'),{status:401});return res;}
@@ -43,7 +43,7 @@ const emptyDraft=d=>!d.photos?.length&&!String(d.caseName||'').trim()&&!String(d
 const statusOf=d=>d.closedAt?(d.lastExport?'Rapport envoyé':'Finalisé'):d.lastExport?'Finalisé':'Brouillon';
 // Contenu envoyé au serveur ; l'empreinte ignore l'heure d'enregistrement et le sujet affiché, pour ne pas
 // renvoyer (ni signaler en conflit) un constat simplement rouvert sans modification.
-async function cloudVersionOf(draft,blobs=new Map()){const visit=structuredClone(draft);if(visit.caseType==='ej'){visit.attendance=[];visit.clientName='';visit.clientAddress='';}
+async function cloudVersionOf(draft,blobs=new Map()){const visit=structuredClone(draft);delete visit.closureReport;if(visit.caseType==='ej'){visit.attendance=[];visit.clientName='';visit.clientAddress='';}
   // Identité du dossier seulement (ses dates changent à chaque synchronisation des dossiers).
   if(visit.dossier&&typeof visit.dossier==='object'){const {id,name,reference,type,address,client,status,airtableId}=visit.dossier;visit.dossier={id,name,reference,type,address,client:visit.caseType==='ej'?'':client,status,airtableId};}
   const clean=await extractBlobs(visit,blobs),{savedAt,activeSubject,...content}=clean;
@@ -71,9 +71,24 @@ async function flushCloud(){if(!CLOUD||cloud.running||!ready)return;clearTimeout
   try{// Suppressions faites sur cet appareil (éventuellement hors réseau) : transmises au serveur, qui les répercute sur les autres appareils.
     for(const id of Object.keys(deletions())){const res=await cloudFetch('/api/constats/'+encodeURIComponent(id),{method:'DELETE'});if(!res.ok&&res.status!==404)throw new Error('Suppression sur le serveur impossible');
       const all=deletions();delete all[id];writeMap(CLOUD_DELETE_KEY,all);cloud.remote=null;}
-    for(const id of Object.keys(dirtyIds())){if(cloudMeta()[id]?.conflict)continue;const result=await pushDraft(id);changed||=result==='ok'||result==='conflict';}}
+    for(const id of Object.keys(dirtyIds())){if(cloudMeta()[id]?.conflict)continue;const result=await pushDraft(id);changed||=result==='ok'||result==='conflict';}
+    changed=(await flushDeposits())||changed;}
   catch(error){cloud.error=error.message||'Sauvegarde serveur impossible';scheduleCloud(60000);}
   finally{cloud.running=false;renderCloudStatus();if(changed)renderDrafts();}}
+// Constats terminés à ranger dans OneDrive : le rapport préparé à la clôture est envoyé au serveur, qui le dépose avec les
+// photos dans le dossier OneDrive de la mission (une fois le constat terminé sauvegardé sur le serveur).
+async function flushDeposits(){let changed=false;
+  for(const id of Object.keys(deposits())){if(dirtyIds()[id]||!cloudMeta()[id]?.version)continue;
+    const draft=(await listDrafts()).find(d=>d.draftId===id),forget=()=>{const all=deposits();delete all[id];writeMap(CLOUD_DEPOSIT_KEY,all);};
+    if(!draft||!draft.closedAt){forget();continue;}
+    const res=await cloudFetch('/api/constats/'+encodeURIComponent(id)+'/depot',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({html:draft.closureReport?.html||'',name:draft.closureReport?.name||''})});
+    const body=await res.json().catch(()=>({}));
+    if(res.status===428){cloud.error=body.message;continue;}
+    if(res.ok||res.status===422||res.status===409||res.status===404){forget();changed=true;
+      if(res.ok){const {closureReport,...rest}=draft;await writeDraftRecord({...rest,storedInOneDrive:{at:new Date().toISOString(),fichiers:body.fichiers}});cloud.remote=null;notify(`Constat rangé dans OneDrive (${body.fichiers} fichier(s)) : ${body.dossier}.`);}
+      else notify('Constat non rangé dans OneDrive : '+(body.message||'erreur')+'.');continue;}
+    throw new Error(body.message||'Rangement dans OneDrive impossible');}
+  return changed;}
 function scheduleCloud(delay=15000){if(!CLOUD)return;clearTimeout(cloud.timer);cloud.timer=setTimeout(flushCloud,delay);}
 // Chaque enregistrement local réussi marque le constat « à envoyer ».
 if(CLOUD){const basePersist=persistVisit;persistVisit=function(){const id=state.draftId;return basePersist().then(ok=>{if(ok&&id){markDirty(id);scheduleCloud();}return ok;});};
@@ -108,7 +123,10 @@ function cloudBadge(d){if(!CLOUD||emptyDraft(d))return '';const meta=cloudMeta()
   if(meta.conflict)return `<p class="cloud-badge warn">⚠ Modifié aussi sur un autre appareil (${escapeHtml(new Date(meta.conflict.updatedAt||Date.now()).toLocaleString('fr-FR'))}).</p><div class="cloud-actions"><button class="secondary" data-cloud-pull="${escapeHtml(d.draftId)}">Prendre la version de l’autre appareil</button><button class="secondary" data-cloud-force="${escapeHtml(d.draftId)}">Garder la version de cet appareil</button></div>`;
   if(dirtyIds()[d.draftId])return `<p class="cloud-badge">⏳ Modifications en attente d’envoi au serveur</p>`;
   if(remote&&remote.version>(meta.version||0))return `<p class="cloud-badge">☁ Version plus récente sur un autre appareil</p><div class="cloud-actions"><button class="secondary" data-cloud-pull="${escapeHtml(d.draftId)}">Mettre à jour cet appareil</button></div>`;
-  const copy=remote?.airtable;return meta.version?`<p class="cloud-badge ${copy&&copy.startsWith('erreur')?'warn':'ok'}">☁ Sauvegardé sur le serveur · Airtable : ${escapeHtml(copy||'copie différée')}</p>`:'';}
+  const stored=remote?.onedrive?.aJour?remote.onedrive:d.storedInOneDrive,ended=remote?.dossierTermine&&!stored;
+  return (deposits()[d.draftId]?'<p class="cloud-badge">⏳ À ranger dans OneDrive</p>':stored?`<p class="cloud-badge ok">📁 Rangé dans OneDrive le ${escapeHtml(new Date(stored.at).toLocaleString('fr-FR'))}</p>`:'')
+    +(ended?'<p class="cloud-badge warn">⚠ Dossier terminé dans le tableau de suivi : ce constat n’est pas rangé dans OneDrive. Rouvrez-le et terminez-le pour le ranger, ou supprimez-le.</p>':'')
+    +(meta.version?'<p class="cloud-badge ok">☁ Sauvegardé sur le serveur</p>':'');}
 async function renderCloudSection(local){const box=$('#cloud-list');if(!box)return;if(!CLOUD){box.innerHTML='';return;}
   const remote=await remoteConstats();if(!remote){box.innerHTML='';return;}
   const ids=new Set(local.map(d=>d.draftId)),others=remote.filter(r=>!ids.has(r.draftId)).sort((a,b)=>String(b.updatedAt).localeCompare(String(a.updatedAt)));
@@ -136,13 +154,24 @@ $('#close-visit').addEventListener('click',async()=>{
   if(!state.lastExport&&!confirm('Aucun rapport n’a été enregistré pour ce constat.\n\nLe terminer quand même ? Il restera consultable dans « Mes brouillons › Constats terminés ».'))return;
   state.closedAt=new Date().toISOString();
   if(!(await persistVisit())){state.closedAt='';return;}
-  scheduleCloud(500);await startNewVisit();showPage('constats');
-  notify('Constat terminé : retrouvez-le dans « Mes brouillons › Constats terminés ».');
+  // Rapport préparé maintenant (constat affiché) pour son rangement dans OneDrive avec les photos.
+  const closedId=state.draftId,report=CLOUD?closureReport():null;
+  await startNewVisit();showPage('constats');
+  // Après le changement de constat (qui réenregistre le constat terminé), le rapport est joint à son enregistrement local.
+  if(CLOUD){if(report){const draft=(await listDrafts()).find(d=>d.draftId===closedId);if(draft)await writeDraftRecord({...draft,closureReport:report});}
+    const all=deposits();all[closedId]=Date.now();writeMap(CLOUD_DEPOSIT_KEY,all);}
+  scheduleCloud(500);
+  notify(CLOUD?'Constat terminé : rapport et photos seront rangés dans le dossier OneDrive de la mission.':'Constat terminé : retrouvez-le dans « Mes brouillons › Constats terminés ».');
 });
+function closureReport(){try{if(pvMode())return {html:buildPvHtml(pvReportData()),name:pvFileName(state.pv.document,state.caseReference,state.visitDate)};
+    const simple=state.caseType==='ep'&&state.pv.document==='simple';
+    return {html:buildConstatHtml({simple,expertSignature:state.expertSigns?state.expertSignature:null,type:state.caseType,reference:state.caseReference,caseName:state.caseName,visitDate:state.visitDate,photos:state.photos,subjects:state.subjects,actions:collectActions(),position:state.position,hideNominatif:state.hideNominatif,attendance:state.attendance,...Object.fromEntries(REPORT_TEXT_FIELDS.map(key=>[key,reportFieldValue(key)]))}),
+      name:simple?pvFileName('simple',state.caseReference,state.visitDate):reportFileName(state.caseReference,state.visitDate)};}
+  catch(error){console.warn('Rapport de clôture :',error);return null;}}
 async function deleteDraft(draftId){const db=await database;if(!db){localStorage.removeItem(STORAGE_KEY+'-draft-'+draftId);return;}
   return new Promise((resolve,reject)=>{const tx=db.transaction('drafts','readwrite');tx.objectStore('drafts').delete(draftId);tx.oncomplete=resolve;tx.onerror=()=>reject(tx.error);});}
 // Suppression d'un constat (en cours ou terminé) : effacé de cet appareil, puis du serveur, d'Airtable et des autres appareils.
-async function removeLocalDraft(id){await deleteDraft(id);clearDirty(id);const meta=cloudMeta();delete meta[id];writeMap(CLOUD_KEY,meta);
+async function removeLocalDraft(id){await deleteDraft(id);clearDirty(id);{const all=deposits();if(all[id]){delete all[id];writeMap(CLOUD_DEPOSIT_KEY,all);}}const meta=cloudMeta();delete meta[id];writeMap(CLOUD_KEY,meta);
   // Constat ouvert : un constat vierge le remplace (rien n'est réenregistré).
   if(id===state.draftId){state.photos=[];state.caseName='';state.caseReference='';state.subjects=['Vue générale'];state.closedAt='';$('#action-list').innerHTML='';await startNewVisit();showPage('constats');}}
 async function deleteConstat(id){
