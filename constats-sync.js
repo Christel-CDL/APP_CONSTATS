@@ -89,7 +89,7 @@ async function writeDraftRecord(value){const db=await database;if(!db){localStor
 async function pullDraft(id){const res=await cloudFetch('/api/constats/'+encodeURIComponent(id));if(!res.ok)throw new Error('Constat introuvable sur le serveur');
   const {version,visit}=await res.json(),restored=await restoreBlobs(visit);normalizeVisit(restored);
   // Le dossier porte un identifiant propre à chaque appareil : on le retrouve par son identifiant Airtable.
-  const dossier=restored.dossier;if(dossier&&typeof dossier==='object'){const same=/^rec\w{14}$/.test(dossier.airtableId||'')&&readDossiers().find(d=>d.airtableId===dossier.airtableId);
+  const dossier=restored.dossier;if(dossier&&typeof dossier==='object'){const ref=String(dossier.reference||'').toUpperCase(),same=readDossiers().find(d=>dossier.airtableId&&d.airtableId===dossier.airtableId)||(ref&&readDossiers().find(d=>d.airtableId&&String(d.reference||'').toUpperCase()===ref));
     if(same)restored.dossierId=same.id;else if(!dossierById(dossier.id)){importDossier(dossier);if(dossier.airtableId){const list=readDossiers(),added=list.find(d=>d.id===dossier.id);if(added){added.airtableId=dossier.airtableId;writeDossiers(list);}}}}
   let local=restored;if(id===state.draftId){restoreState(restored);local=snapshot();await dbWrite(local);}else await writeDraftRecord(restored);
   setCloudMeta(id,{version,fingerprint:(await cloudVersionOf(local)).fingerprint,conflict:null,syncedAt:new Date().toISOString()});clearDirty(id);}

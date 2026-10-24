@@ -37,7 +37,7 @@
 | `SMTP_HOST`, `SMTP_PORT`, `SMTP_SECURE`, `SMTP_USER`, `SMTP_PASS` | Serveur d'envoi des codes (port 587 + `SMTP_SECURE=false`, ou 465 + `true`) |
 | `MAIL_FROM` | Expéditeur, ex. `Constats CDL EXPERT <connexion@expertform.fr>` |
 | `MS_TENANT_ID`, `MS_CLIENT_ID`, `MS_CLIENT_SECRET` | Facultatif : lecture du tableau de suivi des expertises dans OneDrive (voir plus bas). Sans elles, l'application fonctionne sans cette lecture. |
-| `TABLEAU_SUIVI_CHEMIN` | Facultatif : chemin du tableau dans OneDrive, par défaut `EXPERT JUDICIAIRE/DOSSIERS/Dossiers en cours/Tableau_suivi_expertises.xlsx` (feuille `Suivi expertises`, modifiable par `TABLEAU_SUIVI_FEUILLE`) |
+| `TABLEAU_SUIVI_CHEMIN`, `TABLEAU_EP_CHEMIN`, `TABLEAU_CS_CHEMIN` | Facultatif : chemins des tableaux de suivi dans OneDrive, par défaut `EXPERT JUDICIAIRE/DOSSIERS/Dossiers en cours/Tableau_suivi_expertises.xlsx` (feuille `Suivi expertises`), `EXPERTISES/Expertises 2026/Tableau_suivi_expertises_privees.xlsx` et `DEV-CONSULT/Tableau_suivi_missions_conseil.xlsx` (feuille `Suivi`) ; feuilles modifiables par `TABLEAU_SUIVI_FEUILLE`, `TABLEAU_EP_FEUILLE`, `TABLEAU_CS_FEUILLE` |
 
 Les secrets ne sont jamais écrits dans le dépôt ni dans le fichier compose.
 
@@ -66,23 +66,36 @@ pas être supprimée), mais elle ne donne accès à rien sans compte autorisé.
 - Supprimer un dossier dans l'application le retire de l'appareil seulement ; il reste dans Airtable.
 - Le jeton Airtable doit avoir `data.records:read` et `data.records:write` sur la base CONSTATS.
 
-## Tableau de suivi des expertises judiciaires (OneDrive → dossiers)
+## Tableaux de suivi (OneDrive → dossiers)
 
-Le tableau Excel reste la référence. Sa colonne « Code Constats » (`EJ24-358_NOM`) devient le nom du dossier
-(champ `Code Constats` de la table Projets) ; le n° (`EJ24-358`) devient la `Référence`. **Seules les expertises
-« En cours » figurent dans Airtable** : une expertise passée « En attente », « Rapport déposé » ou « Archivé » en est
-retirée (et de la liste de l'application ; ses constats restent dans « Mes brouillons » et leur copie Airtable garde
-le n° d'expertise). Les lignes sans code complet (« À attribuer ») ou sans statut sont ignorées. Rien d'autre n'est
-lu dans le tableau : ni parties, ni juridiction, ni n° RG, ni observations.
+Les tableaux Excel de suivi sont la référence des dossiers ; dès que la lecture OneDrive est configurée (variables
+`MS_…`), la table Projets d'Airtable n'est plus utilisée.
 
-- **Quand ?** À chaque ouverture du profil judiciaire (au plus une fois toutes les 2 minutes, et sans relecture
-  si le fichier n'a pas changé), et sur demande avec « 🔎 Rechercher dans le tableau de suivi » (étape 1 d'un
-  constat et « Mes dossiers »).
-- **Accès à OneDrive.** Le serveur lit le fichier avec le compte Microsoft de l'expert, par Microsoft Graph,
-  avec le seul droit délégué `Files.Read` (lecture des fichiers de ce compte ; aucun droit d'écriture). La
-  première fois, l'application affiche « Connecter OneDrive » : se connecter au compte CDL EXPERTISES et
-  accepter. Le jeton de renouvellement est chiffré sur le serveur (volume `/data`) ; s'il est révoqué ou expiré
-  (90 jours sans utilisation), le lien « Connecter OneDrive » réapparaît.
+| Profil | Tableau(x) lu(s) |
+|---|---|
+| Expertise judiciaire | `Tableau_suivi_expertises.xlsx` (dossier « Dossiers en cours ») |
+| Expertise privée | `Tableau_suivi_expertises_privees.xlsx` (Expertises 2026) et `Tableau_suivi_missions_conseil.xlsx` (DEV-CONSULT) |
+
+- **Ce qui est lu.** Seules les lignes au statut **« En cours »** dont la colonne « Code Constats » est complète
+  (`EJ24-358_NOM`, `EP26-002_NOM`, `CS26-016_NOM`) deviennent des dossiers ; le n° (partie avant « _ ») sert de
+  référence. Tableau judiciaire : rien d'autre (ni parties, ni juridiction, ni n° RG, ni observations). Tableaux privé
+  et conseil : aussi le client et l'adresse du site. Le lien « Dossier OneDrive » de chaque ligne est retenu sur le
+  serveur seulement (rangement des rapports, étape suivante).
+- **Retrait.** Une ligne qui n'est plus « En cours » disparaît de la liste de l'application ; ses constats restent
+  dans « Mes brouillons ». Tant qu'un tableau du profil n'a jamais été lu (OneDrive pas encore connecté), aucun
+  dossier n'est retiré de l'appareil.
+- **Quand ?** À chaque ouverture du profil (au plus une fois toutes les 2 minutes, et sans relecture d'un fichier
+  inchangé), et avec « 🔎 Rechercher dans les tableaux de suivi » (étape 1 d'un constat et « Mes dossiers »). La
+  dernière lecture est conservée sur le serveur (volume `/data`) : la liste reste disponible si OneDrive ne répond pas.
+- **Dossier créé dans l'application** (hors tableau) : conservé sur le serveur, visible sur tous les appareils du
+  profil ; il s'efface de lui-même de la liste dès que le tableau contient la même référence. Un dossier issu d'un
+  tableau se modifie dans le tableau.
+- **Accès à OneDrive.** Le serveur lit les fichiers avec le compte Microsoft de l'expert, par Microsoft Graph,
+  avec le seul droit délégué `Files.Read` (lecture des fichiers de ce compte ; aucun droit d'écriture). Chaque profil
+  se connecte une fois (« Connecter OneDrive », compte CDL EXPERTISES). Le jeton de renouvellement est chiffré sur le
+  serveur ; s'il est révoqué ou expiré (90 jours sans utilisation), le lien « Connecter OneDrive » réapparaît.
+- **Expertises privées en 2027.** Le tableau est dans « Expertises 2026 » : pour l'année suivante, le déplacer (ou le
+  copier) et renseigner `TABLEAU_EP_CHEMIN`, ou le placer dès maintenant directement dans `EXPERTISES`.
 
 ### Mise en place (une fois, compte administrateur Microsoft 365)
 

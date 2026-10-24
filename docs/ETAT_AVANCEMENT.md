@@ -139,3 +139,9 @@ Le prototype actuel comprend :
 - Accueil : indicateur « Actions à suivre » et encadré « Échéances » retirés (les suites à donner servent au compte rendu et à l'assistant) ; « Reprendre le constat actuel » en tête ; un seul bouton « Nouveau constat » (barre du haut).
 - « Sauvegarder la visite dans un fichier » devient « Copie de secours de ce constat », en bas du constat ; « Ouvrir une sauvegarde » devient « Importer une copie de secours », dans « Mes brouillons ».
 - Onglet « Rapports » : liste des constats avec le dernier fichier enregistré et un accès direct à la synthèse (étape 4) pour produire HTML, Word ou PDF.
+
+## Sortie d'Airtable — étape 1 (24 octobre 2026) : dossiers lus directement dans les tableaux de suivi
+
+- Tableaux créés dans OneDrive : `EXPERTISES/Expertises 2026/Tableau_suivi_expertises_privees.xlsx` (4 dossiers 2026 pré-remplis) et `DEV-CONSULT/Tableau_suivi_missions_conseil.xlsx` (21 dossiers clients pré-remplis), codes proposés, statuts à renseigner par Christel.
+- Le serveur compose la liste des dossiers à partir des tableaux (profil judiciaire : tableau EJ ; profil expertise privée : tableaux EP et conseil), sans la table Projets d'Airtable. Dossiers existants reconnus par leur référence (constats toujours rattachés). Dossiers créés dans l'application conservés sur le serveur.
+- Restent sur Airtable : comptes de connexion (étape 3) et copie des constats (remplacée à l'étape 2 par le rangement des rapports et des photos dans OneDrive, droit d'écriture à accorder).

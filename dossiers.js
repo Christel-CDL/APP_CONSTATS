@@ -27,9 +27,9 @@ const remoteValues=d=>({name:d.name,reference:d.reference,type:d.type,client:d.c
 function hiddenRemote(){try{return new Set(JSON.parse(localStorage.getItem(HIDDEN_KEY)||'[]'));}catch{return new Set();}}
 async function projetsApi(method,path='',body,query=''){const res=await fetch('/api/projets'+path+(method==='GET'?'?profil='+encodeURIComponent(PROFILE.id)+query:''),{method,credentials:'same-origin',cache:'no-store',headers:{'Content-Type':'application/json'},body:method==='GET'?undefined:JSON.stringify({...body,profil:PROFILE.id})});
   const data=await res.json().catch(()=>({}));if(!res.ok)throw Object.assign(new Error(data.message||'Synchronisation impossible.'),{status:res.status});return data;}
-// Profil judiciaire : chaque synchronisation fait aussi relire au serveur le tableau de suivi des expertises (OneDrive) ;
-// « Rechercher dans le tableau de suivi » (mode 'force') le relit même s'il n'a pas changé.
-const TABLEAU_SEARCH=DOSSIER_REMOTE&&profileAllows('ej');
+// Chaque synchronisation fait relire au serveur les tableaux de suivi du profil (OneDrive) s'ils ont changé ;
+// « Rechercher dans les tableaux de suivi » (mode 'force') les relit même s'ils n'ont pas changé.
+const TABLEAU_SEARCH=DOSSIER_REMOTE;
 async function syncDossiers(mode){
   if(!DOSSIER_REMOTE||dossierSync.running)return;if(!navigator.onLine){dossierSync.error='Hors connexion : dossiers de l’appareil uniquement.';renderSyncStatus();return;}
   dossierSync.running=true;renderSyncStatus();
@@ -39,10 +39,15 @@ async function syncDossiers(mode){
         const list=readDossiers(),d=list.find(x=>x.id===local.id);if(d){d.airtableId=projet.airtableId;delete d.pendingSync;writeDossiers(list);}}
       catch(error){if(error.status===403||error.status===404||error.status===400){const list=readDossiers(),d=list.find(x=>x.id===local.id);if(d){delete d.pendingSync;d.syncError=error.message;writeDossiers(list);}}else throw error;}
     }
-    const {projets,tableau}=await projetsApi('GET','',undefined,TABLEAU_SEARCH?'&tableau='+(mode==='force'?'force':'1'):''),list=readDossiers(),hidden=hiddenRemote(),now=new Date().toISOString();
+    const {projets,tableau,complet}=await projetsApi('GET','',undefined,TABLEAU_SEARCH?'&tableau='+(mode==='force'?'force':'1'):''),list=readDossiers(),hidden=hiddenRemote(),now=new Date().toISOString();
     dossierSync.tableau=tableau?{...tableau,force:mode==='force'}:null;
-    // Dossier retiré d'Airtable (expertise terminée, retirée du suivi) : retiré aussi de l'appareil ; ses constats restent dans « Mes brouillons ».
-    for(let i=list.length-1;i>=0;i--)if(list[i].airtableId&&!list[i].pendingSync&&!projets.some(p=>p.airtableId===list[i].airtableId))list.splice(i,1);
+    // Même dossier sous une nouvelle clé (passage d'Airtable aux tableaux de suivi) : reconnu par sa référence, il garde son
+    // identifiant local et donc ses constats.
+    for(const p of projets){if(!p.reference||list.some(d=>d.airtableId===p.airtableId))continue;
+      const same=list.find(d=>d.airtableId&&!d.pendingSync&&String(d.reference||'').toUpperCase()===p.reference.toUpperCase()&&!projets.some(q=>q.airtableId===d.airtableId));if(same)same.airtableId=p.airtableId;}
+    // Dossier retiré (expertise terminée, retirée du suivi) : retiré aussi de l'appareil ; ses constats restent dans « Mes brouillons ».
+    // Liste incomplète (tableaux pas encore lus, OneDrive à connecter) : rien n'est retiré.
+    if(complet!==false)for(let i=list.length-1;i>=0;i--)if(list[i].airtableId&&!list[i].pendingSync&&!projets.some(p=>p.airtableId===list[i].airtableId))list.splice(i,1);
     for(const p of projets){if(hidden.has(p.airtableId))continue;const local=list.find(d=>d.airtableId===p.airtableId);
       if(local){if(!local.pendingSync)Object.assign(local,cleanDossier({...local,...p}));}
       else list.push({id:'at-'+p.airtableId,...cleanDossier(p),airtableId:p.airtableId,createdAt:now,updatedAt:now});}
@@ -53,15 +58,15 @@ async function syncDossiers(mode){
 function renderSyncStatus(){const box=$('#dossier-sync');if(!box)return;box.hidden=!DOSSIER_REMOTE;$('#sync-dossiers').hidden=!DOSSIER_REMOTE;$('#sync-dossiers').disabled=dossierSync.running;
   const pending=readDossiers().filter(d=>d.pendingSync).length;
   renderTableauStatus();
-  box.textContent=dossierSync.running?'Synchronisation avec Airtable…':dossierSync.error?`⚠ ${dossierSync.error}${pending?` ${pending} dossier(s) en attente d’envoi.`:''}`:dossierSync.at?`✓ Synchronisé avec Airtable à ${dossierSync.at.toLocaleTimeString('fr-FR',{hour:'2-digit',minute:'2-digit'})}${pending?` · ${pending} en attente`:''}`:'';}
+  box.textContent=dossierSync.running?'Mise à jour des dossiers…':dossierSync.error?`⚠ ${dossierSync.error}${pending?` ${pending} dossier(s) en attente d’envoi.`:''}`:dossierSync.at?`✓ Dossiers à jour à ${dossierSync.at.toLocaleTimeString('fr-FR',{hour:'2-digit',minute:'2-digit'})}${pending?` · ${pending} en attente`:''}`:'';}
 function tableauMessage(t){if(!t)return '';
-  if(t.etat==='ok'){if(t.inchange)return 'Tableau de suivi inchangé depuis la dernière lecture.';const when=t.modifie?` (modifié le ${formatDate(t.modifie,true)})`:'';
-    const changes=[t.ajoutes?`${t.ajoutes} expertise(s) ajoutée(s)`:'',t.misAJour?`${t.misAJour} mise(s) à jour`:'',t.retires?`${t.retires} terminée(s) ou en attente retirée(s)`:''].filter(Boolean).join(', ');
-    return `Tableau de suivi lu${when} : ${changes||'aucun changement'}.${t.force&&!t.ajoutes?' Expertise toujours absente ? Vérifiez dans le tableau son statut (« En cours ») et sa colonne « Code Constats » (format EJ26-1402_NOM), puis enregistrez-le.':''}`;}
+  if(t.etat==='ok'){if(t.inchange)return 'Tableaux de suivi inchangés depuis la dernière lecture.';
+    const lus=(t.tableaux||[]).map(x=>`${x.enCours} ${x.nom} en cours`).join(', '),changes=[t.ajoutes?`${t.ajoutes} dossier(s) ajouté(s)`:'',t.retires?`${t.retires} retiré(s) (plus « En cours »)`:''].filter(Boolean).join(', ');
+    return `Tableaux de suivi lus : ${lus||'aucun'}${changes?' — '+changes:''}.${t.force&&!t.ajoutes?' Dossier toujours absent ? Vérifiez dans le tableau son statut (« En cours ») et sa colonne « Code Constats » (ex. EJ26-1402_NOM, EP26-002_NOM, CS26-016_NOM), puis enregistrez-le.':''}`;}
   return t.message||'';}
 function renderTableauStatus(){for(const id of ['#search-tableau','#picker-search-tableau']){const b=$(id);if(b){b.hidden=!TABLEAU_SEARCH;b.disabled=dossierSync.running;}}
   const t=dossierSync.tableau;for(const box of $$('.tableau-status')){box.hidden=!TABLEAU_SEARCH||!(t||dossierSync.running);
-    box.textContent=dossierSync.running?'Lecture du tableau de suivi…':tableauMessage(t);
+    box.textContent=dossierSync.running?'Lecture des tableaux de suivi…':tableauMessage(t);
     if(t?.etat==='a-connecter'&&!dossierSync.running){const a=document.createElement('a');a.href='/api/microsoft/connexion?profil='+encodeURIComponent(PROFILE.id);a.target='_blank';a.rel='noopener';a.textContent=' Connecter OneDrive';box.append(a);}}}
 $('#sync-dossiers').addEventListener('click',()=>syncDossiers());
 for(const id of ['#search-tableau','#picker-search-tableau'])$(id)?.addEventListener('click',()=>syncDossiers('force'));
