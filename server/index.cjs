@@ -139,6 +139,7 @@ const TABLEAUX={
   ej:{label:'expertises judiciaires',prefix:'EJ',type:'Expertise judiciaire',file:cleanPath(env.TABLEAU_SUIVI_CHEMIN||'EXPERT JUDICIAIRE/DOSSIERS/Dossiers en cours/Tableau_suivi_expertises.xlsx'),sheet:env.TABLEAU_SUIVI_FEUILLE||'Suivi expertises',nominatif:true},
   ep:{label:'expertises privées',prefix:'EP',type:'Expertise privée',file:cleanPath(env.TABLEAU_EP_CHEMIN||'EXPERTISES/Expertises 2026/Tableau_suivi_expertises_privees.xlsx'),sheet:env.TABLEAU_EP_FEUILLE||'Suivi'},
   cs:{label:'missions de conseil',prefix:'CS',type:'Conseil / AMO',file:cleanPath(env.TABLEAU_CS_CHEMIN||'DEV-CONSULT/Tableau_suivi_missions_conseil.xlsx'),sheet:env.TABLEAU_CS_FEUILLE||'Suivi'}};
+const TABLEAU_PARSE=2;// à augmenter quand la lecture des tableaux change : relecture des fichiers même inchangés
 const ROLE_TABLEAUX={'Expert judiciaire':['ej'],'Expert':['ep','cs']};
 const msKey=crypto.createHash('sha256').update('microsoft:'+config.secret).digest(),msPath=userId=>path.join(DATA_DIR,'microsoft',safeId(userId)+'.json');
 function msSave(userId,refreshToken){const iv=crypto.randomBytes(12),c=crypto.createCipheriv('aes-256-gcm',msKey,iv),data=Buffer.concat([c.update(refreshToken,'utf8'),c.final()]);
@@ -184,9 +185,15 @@ function xlsxSheet(buf,sheetName){const files=unzip(buf),read=name=>files.get(na
       cells[col<0?cells.length:col]=type==='s'?shared[Number(v)]??'':type==='inlineStr'?xmlText(body):xmlText(v??'');}
     return Array.from(cells,c=>c??'');});
   return {rows,links,rowNumbers:[...xml.matchAll(/<row\b[^>]*?r="(\d+)"/g)].map(m=>Number(m[1]))};}
-// Lien « Dossier OneDrive » → chemin dans le OneDrive (lien web SharePoint ou chemin Windows du OneDrive synchronisé).
-function oneDrivePath(link){const v=String(link||'');let m=/\/Documents\/(.+)$/.exec(v);if(m){try{return decodeURIComponent(m[1].split('?')[0]);}catch{return '';}}
-  m=/OneDrive - [^\\/]+[\\/](.+)$/.exec(v.replace(/^file:\/\/\/?/,''));if(m){try{return decodeURIComponent(m[1]).replace(/\\/g,'/');}catch{return m[1].replace(/\\/g,'/');}}return '';}
+// Lien « Dossier OneDrive » → chemin dans le OneDrive. Formes rencontrées : lien web SharePoint, chemin Windows du OneDrive
+// synchronisé (éventuellement en file:/// avec espaces codés) et chemin relatif au tableau (forme enregistrée par Excel).
+function oneDrivePath(link,tableFile){let v=String(link||'').trim();if(!v)return '';try{v=decodeURIComponent(v);}catch{}
+  let m=/\/Documents\/(.+)$/.exec(v.split('?')[0]);if(m)return m[1].replace(/\/+$/,'');
+  v=v.replace(/^file:\/*/i,'').replace(/\\/g,'/');m=/OneDrive - [^/]+\/(.+)$/.exec(v);if(m)return m[1].replace(/\/+$/,'');
+  if(/^[a-z]+:|^\/\//i.test(v))return '';// autre disque ou adresse : hors du OneDrive
+  const parts=path.posix.dirname(cleanPath(tableFile||'')).split('/').filter(Boolean);
+  for(const seg of v.split('/')){if(!seg||seg==='.')continue;if(seg==='..')parts.pop();else parts.push(seg);}
+  return parts.join('/');}
 // Lignes du tableau → dossiers « En cours ». Ligne d'en-tête repérée par la colonne « Code Constats ».
 function tableauRows(sheet,key){const t=TABLEAUX[key],values=sheet.rows,header=values.findIndex(row=>row.some(c=>/^code constats/i.test(String(c).trim())));if(header<0)throw new Error('colonne « Code Constats » absente');
   const cols=values[header].map(c=>String(c).trim().toLowerCase()),find=test=>cols.findIndex(test),iCode=find(c=>c.startsWith('code constats')),iStatut=cols.indexOf('statut');
@@ -195,7 +202,7 @@ function tableauRows(sheet,key){const t=TABLEAUX[key],values=sheet.rows,header=v
   values.slice(header+1).forEach((row,i)=>{const value=String(row[iCode]??'').trim(),m=code.exec(value);if(!m||String(row[iStatut]??'').trim().toLowerCase()!=='en cours')return;
     const rowNumber=sheet.rowNumbers[header+1+i],reference=m[1].toUpperCase();
     out.set(reference,{reference,code:value.slice(0,200),type:t.type,client:iClient>=0?String(row[iClient]??'').trim().slice(0,200):'',address:iAdresse>=0?String(row[iAdresse]??'').trim().slice(0,300):'',
-      onedrive:iLien>=0?oneDrivePath(sheet.links.get(colName(iLien)+rowNumber)):''});});
+      onedrive:iLien>=0?oneDrivePath(sheet.links.get(colName(iLien)+rowNumber),t.file):''});});
   return [...out.values()];}
 async function projectRecords(user){const ids=(await userProjectIds(user.id)).filter(id=>/^rec\w{14}$|^dev-/.test(id)).slice(0,200);
   if(config.devUsers)return devProjects.filter(p=>ids.includes(p.id)).map(p=>({id:p.id,fields:p.fields}));
@@ -223,9 +230,9 @@ async function readTableaux(user,mode){const keys=ROLE_TABLEAUX[user.role]||[];i
     try{const token=await msAccessToken(user.id);if(!token)return {store,keys,result:{etat:'a-connecter',message:'Connectez votre OneDrive pour lire vos tableaux de suivi.'}};
       for(const key of keys){const t=TABLEAUX[key],prev=store.tableaux[key]||{};
         try{const item=await graphGet(token,`/me/drive/root:${drivePath(t.file)}`);
-          if(mode==='force'||prev.etag!==item.eTag){const file=await fetch(graph.api+`/me/drive/root:${drivePath(t.file)}:/content`,{signal:AbortSignal.timeout(30000),headers:{Authorization:`Bearer ${token}`}});
+          if(mode==='force'||prev.etag!==item.eTag||prev.v!==TABLEAU_PARSE){const file=await fetch(graph.api+`/me/drive/root:${drivePath(t.file)}:/content`,{signal:AbortSignal.timeout(30000),headers:{Authorization:`Bearer ${token}`}});
             if(!file.ok)throw Object.assign(new Error('Graph '+file.status),{status:file.status});
-            store.tableaux[key]={etag:item.eTag,modifie:item.lastModifiedDateTime||'',lu:new Date().toISOString(),rows:tableauRows(xlsxSheet(Buffer.from(await file.arrayBuffer()),t.sheet),key)};}
+            store.tableaux[key]={v:TABLEAU_PARSE,etag:item.eTag,modifie:item.lastModifiedDateTime||'',lu:new Date().toISOString(),rows:tableauRows(xlsxSheet(Buffer.from(await file.arrayBuffer()),t.sheet),key)};}
           tableaux.push({nom:t.label,etat:'ok',enCours:store.tableaux[key].rows.length,modifie:store.tableaux[key].modifie});}
         catch(error){console.error(`Tableau des ${t.label} :`,error.message);if(error.grant)throw error;
           tableaux.push({nom:t.label,etat:'erreur',message:error.status===404?`Tableau introuvable dans OneDrive (${t.file}).`:/colonne|feuille|xlsx/.test(error.message)?`Tableau illisible : ${error.message}.`:'Lecture impossible pour le moment.'});}}
@@ -279,7 +286,7 @@ async function deleteVisit(user,draftId){if(!DRAFT_ID.test(draftId))throw Object
   return {ok:true};}
 // ── Rangement dans OneDrive à la clôture du constat ─────────────────────────────────────────
 // L'appareil envoie le rapport HTML produit à la clôture ; le serveur le dépose avec les photos (et annotations, notes
-// manuscrites, sons) dans « <dossier OneDrive de la mission>/Constats/AAAA-MM-JJ/ ». Le dossier de la mission est le lien
+// manuscrites, sons) dans « <dossier OneDrive de la mission>/CONSTATS/AAAA-MM-JJ/ ». Le dossier de la mission est le lien
 // « Dossier OneDrive » de la ligne du tableau de suivi (référence du constat).
 const FILE_EXT={'image/jpeg':'jpg','image/png':'png','image/webp':'webp','image/gif':'gif','image/bmp':'bmp','image/avif':'avif','audio/mp4':'m4a','audio/mpeg':'mp3','audio/ogg':'ogg','audio/webm':'webm','audio/wav':'wav','video/webm':'webm'};
 const slug=v=>String(v||'').normalize('NFD').replace(/[̀-ͯ]/g,'').replace(/[^\w-]+/g,'-').replace(/^-+|-+$/g,'').slice(0,40);
@@ -289,15 +296,21 @@ async function graphUpload(token,file,data,type){const url=graph.api+`/me/drive/
   const session=await fetch(url+'/createUploadSession',{method:'POST',signal:AbortSignal.timeout(30000),headers:{Authorization:`Bearer ${token}`,'Content-Type':'application/json'},body:JSON.stringify({item:{'@microsoft.graph.conflictBehavior':'replace'}})});
   if(!session.ok)throw fail(session);const {uploadUrl}=await session.json(),size=327680*30;
   for(let i=0;i<data.length;i+=size){const part=data.subarray(i,i+size),res=await fetch(uploadUrl,{method:'PUT',signal:AbortSignal.timeout(120000),headers:{'Content-Range':`bytes ${i}-${i+part.length-1}/${data.length}`},body:part});if(!res.ok)throw fail(res);}}
-function missionFolder(userId,visit){const ref=String(visit.caseReference||visit.dossier?.reference||'').trim().toUpperCase();if(!ref)return '';
-  return Object.values(readDossierStore(userId).tableaux).flatMap(t=>t.rows||[]).find(r=>r.reference===ref)?.onedrive||'';}
+// Dossier de la mission : lien de la ligne du tableau ; à défaut, sous-dossier du dossier du tableau dont le nom contient le
+// n° de l'expertise (ex. « …_MI24-358_… » pour EJ24-358).
+async function missionFolder(user,visit,token){const ref=String(visit.caseReference||visit.dossier?.reference||'').trim().toUpperCase();if(!ref)return '';
+  const store=readDossierStore(user.id);for(const [key,t] of Object.entries(store.tableaux)){const row=(t.rows||[]).find(r=>r.reference===ref);if(!row)continue;if(row.onedrive)return row.onedrive;
+    const dir=path.posix.dirname(TABLEAUX[key]?.file||''),number=ref.replace(/^[A-Z]+/,'');if(!number||dir==='/')return '';
+    const list=await graphGet(token,`/me/drive/root:${drivePath(dir)}:/children?$select=name,folder&$top=999`).catch(()=>({value:[]}));
+    const found=(list.value||[]).find(i=>i.folder&&new RegExp(`(^|[^0-9])${number.replace(/[^0-9]+/g,'[^0-9]?')}([^0-9]|$)`).test(i.name));return found?`${dir.slice(1)}/${found.name}`:'';}
+  return '';}
 async function depositVisit(user,draftId,body){const record=readConstat(user.id,draftId);if(!record)throw Object.assign(new Error('absent'),{status:404});
   const v=record.visit;if(!v.closedAt)throw Object.assign(new Error('Constat non terminé.'),{status:409});
-  const base=missionFolder(user.id,v);if(!base)throw Object.assign(new Error('Pas de dossier OneDrive pour ce constat : vérifiez sa référence et le lien « Dossier OneDrive » de la ligne du tableau de suivi.'),{status:422});
   const token=await msAccessToken(user.id);if(!token)throw Object.assign(new Error('Connectez OneDrive (droit d’écriture) pour ranger les constats terminés.'),{status:428});
+  const base=await missionFolder(user,v,token);if(!base)throw Object.assign(new Error('Pas de dossier OneDrive trouvé pour ce constat : vérifiez sa référence et le lien « Ouvrir » (Dossier OneDrive) de sa ligne dans le tableau de suivi'),{status:422});
   // Un dossier par jour de visite ; un second constat du même jour va dans « AAAA-MM-JJ (2) ».
   const day=/^\d{4}-\d{2}-\d{2}$/.test(v.visitDate||'')?v.visitDate:String(v.closedAt).slice(0,10),used=new Set(listVisits(user.id).filter(c=>c.draftId!==draftId).map(c=>readConstat(user.id,c.draftId)?.onedrive?.folder).filter(Boolean));
-  let folder=`${base}/Constats/${day}`;for(let n=2;used.has(folder);n++)folder=`${base}/Constats/${day} (${n})`;
+  let folder=`${base}/CONSTATS/${day}`;for(let n=2;used.has(folder);n++)folder=`${base}/CONSTATS/${day} (${n})`;
   const files=[],name=String(body.name||'').split(/[\\/]/).pop().replace(/[^\w.() -]+/g,'_').slice(0,120);
   if(typeof body.html==='string'&&body.html.length&&/\.html?$/i.test(name))files.push({path:`${folder}/${name}`,data:Buffer.from(body.html,'utf8'),type:'text/html'});
   for(const p of v.photos||[])for(const [field,suffix] of [['src',''],['annotatedSrc','_annotee'],['drawing','_note-manuscrite'],['audio','_son']]){const m=/^fichier:([a-f0-9]{64})$/.exec(p[field]||'');if(!m)continue;

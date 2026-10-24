@@ -88,8 +88,8 @@ async function flushDeposits(){let changed=false;
     const body=await res.json().catch(()=>({}));
     if(res.status===428){cloud.error=body.message;continue;}
     if(res.ok||res.status===422||res.status===409||res.status===404){forget();changed=true;
-      if(res.ok){const {closureReport,...rest}=draft;await writeDraftRecord({...rest,storedInOneDrive:{at:new Date().toISOString(),fichiers:body.fichiers}});cloud.remote=null;notify(`Constat rangé dans OneDrive (${body.fichiers} fichier(s)) : ${body.dossier}.`);}
-      else notify('Constat non rangé dans OneDrive : '+(body.message||'erreur')+'.');continue;}
+      if(res.ok){const {closureReport,depositError,...rest}=draft;await writeDraftRecord({...rest,storedInOneDrive:{at:new Date().toISOString(),fichiers:body.fichiers}});cloud.remote=null;notify(`Constat rangé dans OneDrive (${body.fichiers} fichier(s)) : ${body.dossier}.`);}
+      else{await writeDraftRecord({...draft,depositError:String(body.message||'erreur').slice(0,300)});notify('Constat non rangé dans OneDrive : '+(body.message||'erreur')+'.');}continue;}
     throw new Error(body.message||'Rangement dans OneDrive impossible');}
   return changed;}
 function scheduleCloud(delay=15000){if(!CLOUD)return;clearTimeout(cloud.timer);cloud.timer=setTimeout(flushCloud,delay);}
@@ -127,13 +127,13 @@ function cloudBadge(d){if(!CLOUD||emptyDraft(d))return '';const meta=cloudMeta()
   if(dirtyIds()[d.draftId])return `<p class="cloud-badge">⏳ Modifications en attente d’envoi au serveur</p>`;
   if(remote&&remote.version>(meta.version||0))return `<p class="cloud-badge">☁ Version plus récente sur un autre appareil</p><div class="cloud-actions"><button class="secondary" data-cloud-pull="${escapeHtml(d.draftId)}">Mettre à jour cet appareil</button></div>`;
   const stored=storedInOneDrive(d),ended=remote?.dossierTermine&&!stored;
-  return (deposits()[d.draftId]?'<p class="cloud-badge">⏳ À ranger dans OneDrive</p>':stored?`<p class="cloud-badge ok">📁 Rangé dans OneDrive le ${escapeHtml(new Date(stored.at).toLocaleString('fr-FR'))}</p>`:'')
+  return (deposits()[d.draftId]?'<p class="cloud-badge">⏳ À ranger dans OneDrive</p>':d.closedAt&&!stored&&d.depositError?`<p class="cloud-badge warn">⚠ Non rangé dans OneDrive : ${escapeHtml(d.depositError)}.</p><div class="cloud-actions"><button class="secondary" data-retry-deposit="${escapeHtml(d.draftId)}">Réessayer le rangement</button></div>`:d.closedAt&&!stored&&CLOUD?`<div class="cloud-actions"><button class="secondary" data-retry-deposit="${escapeHtml(d.draftId)}">Ranger dans OneDrive</button></div>`:stored?`<p class="cloud-badge ok">📁 Rangé dans OneDrive le ${escapeHtml(new Date(stored.at).toLocaleString('fr-FR'))}</p>`:'')
     +(ended?'<p class="cloud-badge warn">⚠ Dossier terminé dans le tableau de suivi : ce constat n’est pas rangé dans OneDrive. Rouvrez-le et terminez-le pour le ranger, ou supprimez-le.</p>':'')
     +(meta.version?'<p class="cloud-badge ok">☁ Sauvegardé sur le serveur</p>':'');}
 async function renderCloudSection(local){const box=$('#cloud-list');if(!box)return;if(!CLOUD){box.innerHTML='';return;}
   const remote=await remoteConstats();if(!remote){box.innerHTML='';return;}
   const ids=new Set(local.map(d=>d.draftId)),others=remote.filter(r=>!ids.has(r.draftId)).sort((a,b)=>String(b.updatedAt).localeCompare(String(a.updatedAt)));
-  const card=r=>`<article class="draft-card cloud"><div><h2>${escapeHtml([r.caseReference,r.caseType==='ej'?'':r.caseName].filter(Boolean).join(' — ')||'Constat')}</h2><p>${r.photos} photo(s) · visite du ${escapeHtml(frenchDate(r.visitDate))}</p><small>Sauvegardé le ${escapeHtml(new Date(r.updatedAt).toLocaleString('fr-FR'))}${r.closedAt?' · terminé':''}</small></div><div class="draft-buttons"><button class="primary" data-cloud-pull="${escapeHtml(r.draftId)}">Récupérer sur cet appareil</button></div></article>`;
+  const card=r=>`<article class="draft-card cloud"><div><h2>${escapeHtml(r.caseName||r.caseReference||'Constat')}</h2><p>${r.photos} photo(s) · visite du ${escapeHtml(frenchDate(r.visitDate))}</p><small>Sauvegardé le ${escapeHtml(new Date(r.updatedAt).toLocaleString('fr-FR'))}${r.closedAt?' · terminé':''}</small></div><div class="draft-buttons"><button class="primary" data-cloud-pull="${escapeHtml(r.draftId)}">Récupérer sur cet appareil</button></div></article>`;
   const open=others.filter(r=>!r.closedAt),closed=others.filter(r=>r.closedAt&&!r.onedrive?.aJour);
   box.innerHTML=(open.length?`<h2 class="draft-section">Sur vos autres appareils (${open.length})</h2><p class="muted draft-section-note">Constats en cours sauvegardés depuis un autre appareil : récupérez-les pour continuer ici.</p>${open.map(card).join('')}`:'')
     +(closed.length?`<details class="cloud-closed"><summary>Constats terminés sauvegardés sur le serveur (${closed.length})</summary>${closed.map(card).join('')}</details>`:'');}
@@ -148,6 +148,13 @@ document.addEventListener('click',async e=>{const pull=e.target.closest('[data-c
     cloud.remote=null;renderDrafts();}
   catch(error){alert((error.message||'Opération impossible')+'. Vérifiez la connexion et réessayez.');}finally{button.disabled=false;renderCloudStatus();}});
 
+// Rangement relancé à la main (lien du tableau corrigé, OneDrive reconnecté…). Le rapport est reconstruit si besoin.
+document.addEventListener('click',async e=>{const b=e.target.closest('[data-retry-deposit]');if(!b)return;const id=b.dataset.retryDeposit;b.disabled=true;
+  try{const draft=(await listDrafts()).find(d=>d.draftId===id);if(!draft)return;
+    if(!draft.closureReport){if(visitBusy()){alert('Terminez l’opération en cours.');return;}if(id!==state.draftId&&unsaved)await persistVisit();
+      const current=snapshot();restoreState(draft);const report=closureReport();restoreState(current);if(report)draft.closureReport=report;}
+    const {depositError,...rest}=draft;await writeDraftRecord(rest);const all=deposits();all[id]=Date.now();writeMap(CLOUD_DEPOSIT_KEY,all);renderDrafts();await flushCloud();}
+  finally{b.disabled=false;}});
 // « Terminer ce constat » : il quitte le constat actuel et passe dans « Constats terminés ».
 function renderCloseStatus(){const box=$('#close-status');if(!box)return;const meta=cloudMeta()[state.draftId]||{};
   box.textContent=[state.lastExport?`Dernier fichier enregistré : ${state.lastExport.name} (${new Date(state.lastExport.at).toLocaleString('fr-FR')}).`:'Aucun rapport enregistré pour ce constat.',
@@ -159,7 +166,8 @@ $('#close-visit').addEventListener('click',async()=>{
   if(!(await persistVisit())){state.closedAt='';return;}
   // Rapport préparé maintenant (constat affiché) pour son rangement dans OneDrive avec les photos.
   const closedId=state.draftId,report=CLOUD?closureReport():null;
-  await startNewVisit();showPage('constats');
+  // Constat vierge sans demande caméra / micro / position : elles viendront au prochain constat réellement démarré.
+  await startNewVisit(undefined,{prepareAccess:false});showPage('constats');
   // Après le changement de constat (qui réenregistre le constat terminé), le rapport est joint à son enregistrement local.
   if(CLOUD){if(report){const draft=(await listDrafts()).find(d=>d.draftId===closedId);if(draft)await writeDraftRecord({...draft,closureReport:report});}
     const all=deposits();all[closedId]=Date.now();writeMap(CLOUD_DEPOSIT_KEY,all);}
@@ -176,7 +184,7 @@ async function deleteDraft(draftId){const db=await database;if(!db){localStorage
 // Suppression d'un constat (en cours ou terminé) : effacé de cet appareil, puis du serveur, d'Airtable et des autres appareils.
 async function removeLocalDraft(id){await deleteDraft(id);clearDirty(id);{const all=deposits();if(all[id]){delete all[id];writeMap(CLOUD_DEPOSIT_KEY,all);}}const meta=cloudMeta();delete meta[id];writeMap(CLOUD_KEY,meta);
   // Constat ouvert : un constat vierge le remplace (rien n'est réenregistré).
-  if(id===state.draftId){state.photos=[];state.caseName='';state.caseReference='';state.subjects=['Vue générale'];state.closedAt='';$('#action-list').innerHTML='';await startNewVisit();showPage('constats');}}
+  if(id===state.draftId){state.photos=[];state.caseName='';state.caseReference='';state.subjects=['Vue générale'];state.closedAt='';$('#action-list').innerHTML='';await startNewVisit(undefined,{prepareAccess:false});showPage('constats');}}
 async function deleteConstat(id){
   if(visitBusy()){alert('Terminez l’opération en cours (photo, import, enregistrement) avant de supprimer un constat.');return;}
   if(id===state.draftId&&unsaved)await persistVisit();

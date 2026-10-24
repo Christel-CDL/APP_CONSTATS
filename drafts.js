@@ -19,11 +19,11 @@ $('#report-list')?.addEventListener('click',e=>{const button=e.target.closest('[
 async function saveDraftExplicit(){if(visitBusy()){alert('Terminez la prise de photo, l’import ou l’enregistrement audio avant d’enregistrer le brouillon.');return;}const button=$('#save-draft');button.disabled=true;try{const ok=await persistVisit();if(ok){$('.toast').textContent='Brouillon enregistré. Retrouvez-le dans « Mes brouillons ».';$('.toast').classList.add('show');setTimeout(()=>$('.toast').classList.remove('show'),4500);}}finally{button.disabled=false;}}
 $('#save-draft').addEventListener('click',saveDraftExplicit);
 initialize();
-async function startNewVisit(dossierId){
+async function startNewVisit(dossierId,{prepareAccess=true}={}){
   if(!ready||visitBusy()){alert('Terminez l’opération en cours avant de démarrer un autre constat.');return;}
   visitSwitching=true;
   try{if(state.photos.length||state.caseName||state.subjects.length>1||collectActions().some(a=>a.text||a.recipient)){if(!(await persistVisit()))return;}
-    suspendVisitAccess();clearTimeout(saveTimer);state.draftId=createId();state.photos=[];state.subjects=['Vue générale'];state.activeSubject='Vue générale';state.position=null;state.dossierId=null;state.caseName='';state.caseReference='';state.visitDate=new Date().toLocaleDateString('en-CA');resetReportFields();if(typeof dossierId==='string'&&dossierById(dossierId)){const dossier=dossierById(dossierId);state.dossierId=dossier.id;Object.assign(state,dossierVisitFields(dossier));touchDossier(dossier.id);}syncDossierPicker();renderCaseDetails();$('#action-list').innerHTML='';addAction();selectCase(0);state.currentStep=1;renderSubjects();renderCaptures();showPosition();showPage('inspection');renderStep();saveVisit();prepareVisitAccess();
+    suspendVisitAccess();clearTimeout(saveTimer);state.draftId=createId();state.photos=[];state.subjects=['Vue générale'];state.activeSubject='Vue générale';state.position=null;state.dossierId=null;state.caseName='';state.caseReference='';state.visitDate=new Date().toLocaleDateString('en-CA');resetReportFields();if(typeof dossierId==='string'&&dossierById(dossierId)){const dossier=dossierById(dossierId);state.dossierId=dossier.id;Object.assign(state,dossierVisitFields(dossier));touchDossier(dossier.id);}syncDossierPicker();renderCaseDetails();$('#action-list').innerHTML='';addAction();selectCase(0);state.currentStep=1;renderSubjects();renderCaptures();showPosition();showPage('inspection');renderStep();saveVisit();if(prepareAccess)prepareVisitAccess();
   }finally{visitSwitching=false;}
 }
 $('#draft-list').addEventListener('click',e=>{const button=e.target.closest('[data-open-draft]');if(button)openDraft(button.dataset.openDraft,button);});
