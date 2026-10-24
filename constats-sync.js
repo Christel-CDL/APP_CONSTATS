@@ -39,11 +39,14 @@ async function restoreBlobs(value){
   if(Array.isArray(value))return Promise.all(value.map(restoreBlobs));
   if(value&&typeof value==='object'){const out={};for(const [k,v] of Object.entries(value))out[k]=await restoreBlobs(v);return out;}
   return value;}
+// Constat terminé et rangé dans OneDrive (sur cet appareil ou un autre) : il quitte « Mes brouillons » ; il reste dans
+// son dossier et dans « Rapports », d'où il peut être rouvert pour être complété tant que le dossier est en cours.
+function storedInOneDrive(d){if(!d.closedAt)return null;const remote=cloud.remote?.find(r=>r.draftId===d.draftId);return remote?.onedrive?.aJour?remote.onedrive:d.storedInOneDrive||null;}
 const emptyDraft=d=>!d.photos?.length&&!String(d.caseName||'').trim()&&!String(d.caseReference||'').trim()&&!d.closedAt;
 const statusOf=d=>d.closedAt?(d.lastExport?'Rapport envoyé':'Finalisé'):d.lastExport?'Finalisé':'Brouillon';
 // Contenu envoyé au serveur ; l'empreinte ignore l'heure d'enregistrement et le sujet affiché, pour ne pas
 // renvoyer (ni signaler en conflit) un constat simplement rouvert sans modification.
-async function cloudVersionOf(draft,blobs=new Map()){const visit=structuredClone(draft);delete visit.closureReport;if(visit.caseType==='ej'){visit.attendance=[];visit.clientName='';visit.clientAddress='';}
+async function cloudVersionOf(draft,blobs=new Map()){const visit=structuredClone(draft);delete visit.closureReport;delete visit.storedInOneDrive;if(visit.caseType==='ej'){visit.attendance=[];visit.clientName='';visit.clientAddress='';}
   // Identité du dossier seulement (ses dates changent à chaque synchronisation des dossiers).
   if(visit.dossier&&typeof visit.dossier==='object'){const {id,name,reference,type,address,client,status,airtableId}=visit.dossier;visit.dossier={id,name,reference,type,address,client:visit.caseType==='ej'?'':client,status,airtableId};}
   const clean=await extractBlobs(visit,blobs),{savedAt,activeSubject,...content}=clean;
@@ -123,7 +126,7 @@ function cloudBadge(d){if(!CLOUD||emptyDraft(d))return '';const meta=cloudMeta()
   if(meta.conflict)return `<p class="cloud-badge warn">⚠ Modifié aussi sur un autre appareil (${escapeHtml(new Date(meta.conflict.updatedAt||Date.now()).toLocaleString('fr-FR'))}).</p><div class="cloud-actions"><button class="secondary" data-cloud-pull="${escapeHtml(d.draftId)}">Prendre la version de l’autre appareil</button><button class="secondary" data-cloud-force="${escapeHtml(d.draftId)}">Garder la version de cet appareil</button></div>`;
   if(dirtyIds()[d.draftId])return `<p class="cloud-badge">⏳ Modifications en attente d’envoi au serveur</p>`;
   if(remote&&remote.version>(meta.version||0))return `<p class="cloud-badge">☁ Version plus récente sur un autre appareil</p><div class="cloud-actions"><button class="secondary" data-cloud-pull="${escapeHtml(d.draftId)}">Mettre à jour cet appareil</button></div>`;
-  const stored=remote?.onedrive?.aJour?remote.onedrive:d.storedInOneDrive,ended=remote?.dossierTermine&&!stored;
+  const stored=storedInOneDrive(d),ended=remote?.dossierTermine&&!stored;
   return (deposits()[d.draftId]?'<p class="cloud-badge">⏳ À ranger dans OneDrive</p>':stored?`<p class="cloud-badge ok">📁 Rangé dans OneDrive le ${escapeHtml(new Date(stored.at).toLocaleString('fr-FR'))}</p>`:'')
     +(ended?'<p class="cloud-badge warn">⚠ Dossier terminé dans le tableau de suivi : ce constat n’est pas rangé dans OneDrive. Rouvrez-le et terminez-le pour le ranger, ou supprimez-le.</p>':'')
     +(meta.version?'<p class="cloud-badge ok">☁ Sauvegardé sur le serveur</p>':'');}
@@ -131,7 +134,7 @@ async function renderCloudSection(local){const box=$('#cloud-list');if(!box)retu
   const remote=await remoteConstats();if(!remote){box.innerHTML='';return;}
   const ids=new Set(local.map(d=>d.draftId)),others=remote.filter(r=>!ids.has(r.draftId)).sort((a,b)=>String(b.updatedAt).localeCompare(String(a.updatedAt)));
   const card=r=>`<article class="draft-card cloud"><div><h2>${escapeHtml([r.caseReference,r.caseType==='ej'?'':r.caseName].filter(Boolean).join(' — ')||'Constat')}</h2><p>${r.photos} photo(s) · visite du ${escapeHtml(frenchDate(r.visitDate))}</p><small>Sauvegardé le ${escapeHtml(new Date(r.updatedAt).toLocaleString('fr-FR'))}${r.closedAt?' · terminé':''}</small></div><div class="draft-buttons"><button class="primary" data-cloud-pull="${escapeHtml(r.draftId)}">Récupérer sur cet appareil</button></div></article>`;
-  const open=others.filter(r=>!r.closedAt),closed=others.filter(r=>r.closedAt);
+  const open=others.filter(r=>!r.closedAt),closed=others.filter(r=>r.closedAt&&!r.onedrive?.aJour);
   box.innerHTML=(open.length?`<h2 class="draft-section">Sur vos autres appareils (${open.length})</h2><p class="muted draft-section-note">Constats en cours sauvegardés depuis un autre appareil : récupérez-les pour continuer ici.</p>${open.map(card).join('')}`:'')
     +(closed.length?`<details class="cloud-closed"><summary>Constats terminés sauvegardés sur le serveur (${closed.length})</summary>${closed.map(card).join('')}</details>`:'');}
 function renderCloudStatus(){const box=$('#cloud-status');if(!box)return;box.hidden=!CLOUD;if(!CLOUD)return;const pending=Object.keys(dirtyIds()).length,conflicts=Object.values(cloudMeta()).filter(m=>m.conflict).length;

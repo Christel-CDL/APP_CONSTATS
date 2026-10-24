@@ -105,6 +105,11 @@ const FILES={'/EXPERT%20JUDICIAIRE/DOSSIERS/Dossiers%20en%20cours/Tableau_suivi_
     assert.ok(stored,'Constat marqué rangé ; rapport de clôture retiré de l’appareil');
     assert.ok(!(await ep.evaluate(id=>listDrafts().then(l=>'closureReport' in l.find(d=>d.draftId===id)),draftId)));
     assert.equal(JSON.parse(fs.readFileSync(path.join(dataDir,'constats','dev-ep',draftId+'.json'),'utf8')).onedrive.fichiers,2);
+    // Constat rangé : absent de « Mes brouillons », présent dans son dossier (réouvrable) et dans « Rapports »
+    await ep.evaluate(()=>renderDrafts());await ep.waitForTimeout(300);
+    assert.equal(await ep.locator(`#draft-list [data-open-draft="${draftId}"],#draft-list [data-delete-draft="${draftId}"]`).count(),0,'Constat rangé retiré de « Mes brouillons »');
+    assert.match(await ep.locator('#dossier-list').innerText(),/rangé dans OneDrive[\s\S]*Rouvrir pour compléter/);
+    assert.equal(await ep.locator(`#report-list [data-open-report="${draftId}"]`).count(),1);assert.match(await ep.locator('#report-list').innerText(),/Rangé dans OneDrive le/);
     // ── Dossier passé « Terminé » dans le tableau : constat rangé effacé du serveur, puis de l'appareil ──
     FILES['/EXPERTISES/Expertises%202026/Tableau_suivi_expertises_privees.xlsx']=fixture('tableau-ep-termine.xlsx');ms.etag='"v2"';
     await ep.evaluate(()=>syncDossiers('force'));await ep.waitForFunction(()=>!dossierSync.running&&dossierSync.tableau?.etat==='ok'&&!readDossiers().some(d=>d.name==='EP26-001_ALPHA'));
@@ -114,6 +119,6 @@ const FILES={'/EXPERT%20JUDICIAIRE/DOSSIERS/Dossiers%20en%20cours/Tableau_suivi_
     assert.ok(gone,'Constat retiré de l’appareil');
     assert.equal(await ep.locator('[data-dossier-delete]').count(),0,'Aucune suppression de dossier dans l’application');
     assert.deepEqual(errors,[]);
-    console.log('PASS: OneDrive connection (Files.ReadWrite scope, account choice, signed single-use state, encrypted refresh token), dossiers read directly from the tracking tables (no Airtable): EJ profile = EJ table, private profile = EP + consulting tables, « En cours » only, code/n° only for EJ, existing dossier re-keyed by reference, nothing removed before first read, manual dossiers kept on server, unchanged file not re-read, revoked access, report and photos stored in the mission OneDrive folder at closure, ended dossier cleans its stored constats (server and device), no dossier deletion in the app');
+    console.log('PASS: OneDrive connection (Files.ReadWrite scope, account choice, signed single-use state, encrypted refresh token), dossiers read directly from the tracking tables (no Airtable): EJ profile = EJ table, private profile = EP + consulting tables, « En cours » only, code/n° only for EJ, existing dossier re-keyed by reference, nothing removed before first read, manual dossiers kept on server, unchanged file not re-read, revoked access, report and photos stored in the mission OneDrive folder at closure (then out of drafts, still in dossier and reports), ended dossier cleans its stored constats (server and device), no dossier deletion in the app');
   }finally{await browser.close();server.kill();fake.close();}
 })().catch(error=>{console.error(error);process.exit(1);});

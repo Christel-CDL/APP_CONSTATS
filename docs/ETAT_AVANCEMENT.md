@@ -151,3 +151,4 @@ Le prototype actuel comprend :
 - À la clôture d'un constat, le rapport HTML (modèle CDL ou PV) et les photos sont rangés dans le dossier OneDrive de la mission (`Constats/AAAA-MM-JJ/`, photos dans `Photos/`). Droit délégué `Files.ReadWrite` ajouté dans Microsoft Entra par Christel ; chaque profil doit reconnecter OneDrive une fois.
 - Dossier terminé ou retiré du tableau : ses constats rangés sont effacés du serveur et des appareils ; les autres sont signalés. Suppression de dossier retirée de l'application.
 - La copie des constats dans Airtable reste active jusqu'à l'étape 3 (comptes sur le serveur, arrêt d'Airtable).
+- Un constat terminé et rangé dans OneDrive quitte « Mes brouillons » ; il reste dans son dossier (« Rouvrir pour compléter », tant que le dossier est en cours) et dans l'onglet « Rapports ». Rouvert puis terminé à nouveau, il est rangé de nouveau au même endroit.
