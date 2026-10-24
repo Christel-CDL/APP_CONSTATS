@@ -296,18 +296,28 @@ async function graphUpload(token,file,data,type){const url=graph.api+`/me/drive/
   const session=await fetch(url+'/createUploadSession',{method:'POST',signal:AbortSignal.timeout(30000),headers:{Authorization:`Bearer ${token}`,'Content-Type':'application/json'},body:JSON.stringify({item:{'@microsoft.graph.conflictBehavior':'replace'}})});
   if(!session.ok)throw fail(session);const {uploadUrl}=await session.json(),size=327680*30;
   for(let i=0;i<data.length;i+=size){const part=data.subarray(i,i+size),res=await fetch(uploadUrl,{method:'PUT',signal:AbortSignal.timeout(120000),headers:{'Content-Range':`bytes ${i}-${i+part.length-1}/${data.length}`},body:part});if(!res.ok)throw fail(res);}}
-// Dossier de la mission : lien de la ligne du tableau ; à défaut, sous-dossier du dossier du tableau dont le nom contient le
-// n° de l'expertise (ex. « …_MI24-358_… » pour EJ24-358).
-async function missionFolder(user,visit,token){const ref=String(visit.caseReference||visit.dossier?.reference||'').trim().toUpperCase();if(!ref)return '';
-  const store=readDossierStore(user.id);for(const [key,t] of Object.entries(store.tableaux)){const row=(t.rows||[]).find(r=>r.reference===ref);if(!row)continue;if(row.onedrive)return row.onedrive;
-    const dir=path.posix.dirname(TABLEAUX[key]?.file||''),number=ref.replace(/^[A-Z]+/,'');if(!number||dir==='/')return '';
-    const list=await graphGet(token,`/me/drive/root:${drivePath(dir)}:/children?$select=name,folder&$top=999`).catch(()=>({value:[]}));
-    const found=(list.value||[]).find(i=>i.folder&&new RegExp(`(^|[^0-9])${number.replace(/[^0-9]+/g,'[^0-9]?')}([^0-9]|$)`).test(i.name));return found?`${dir.slice(1)}/${found.name}`:'';}
-  return '';}
+// Dossier de la mission : lien de la ligne du tableau ; à défaut, recherche dans le dossier du tableau et ses sous-dossiers
+// (ex. dossiers rangés par tribunal) d'un dossier dont le nom contient le n° de l'expertise (« …MI24-358… ») ou le nom
+// court du code (« MATHIAS » pour EJ24-358_MATHIAS → « MATHIAS-OLIVIER TERRASS »). Retourne {path, how}.
+const normName=v=>String(v||'').normalize('NFD').replace(/[\u0300-\u036f]/g,'').toUpperCase().replace(/[^A-Z0-9]+/g,' ').trim();
+async function missionFolder(user,visit,token){const ref=String(visit.caseReference||visit.dossier?.reference||'').trim().toUpperCase();if(!ref)return {path:'',how:'sans référence'};
+  const store=readDossierStore(user.id);for(const [key,t] of Object.entries(store.tableaux)){const row=(t.rows||[]).find(r=>r.reference===ref);if(!row)continue;if(row.onedrive)return {path:row.onedrive,how:'lien du tableau'};
+    const dir=path.posix.dirname(TABLEAUX[key]?.file||'');if(dir==='/')return {path:'',how:'pas de lien'};
+    const number=ref.replace(/^[A-Z]+/,''),byNumber=new RegExp(`(^|[^0-9])${number.replace(/[^0-9]+/g,'[^0-9]?')}([^0-9]|$)`),suffix=normName(String(row.code||'').split('_').slice(1).join(' '));
+    const byName=name=>suffix&&(` ${normName(name)} `).includes(` ${suffix} `)||suffix.split(' ')[0].length>=4&&normName(name).split(' ').includes(suffix.split(' ')[0]);
+    const children=async p=>((await graphGet(token,`/me/drive/root:${drivePath(p)}:/children?$select=name,folder&$top=999`).catch(()=>({value:[]}))).value||[]).filter(i=>i.folder).map(i=>({name:i.name,path:`${p}/${i.name}`}));
+    const level1=await children(dir),level2=[];for(const f of level1)if(!byNumber.test(f.name))level2.push(...await children(f.path));
+    // N° : premier dossier qui le porte. Nom : correspondance unique, de préférence au niveau des dossiers d'expertise (sous les
+    // dossiers par tribunal), jamais un dossier qui contient lui-même d'autres dossiers d'expertise correspondants.
+    const unique=list=>{const named=list.filter(f=>byName(f.name));return named.length===1?named[0]:null;};
+    const found=[...level1,...level2].find(f=>byNumber.test(f.name))||unique(level2)||(level2.some(f=>byName(f.name))?null:unique(level1.filter(f=>!level2.some(c=>c.path.startsWith(f.path+'/')))));
+    return found?{path:found.path.slice(1),how:'recherche par '+(byNumber.test(found.name)?'n°':'nom')}:{path:'',how:'introuvable'};}
+  return {path:'',how:'dossier absent des tableaux'};}
 async function depositVisit(user,draftId,body){const record=readConstat(user.id,draftId);if(!record)throw Object.assign(new Error('absent'),{status:404});
   const v=record.visit;if(!v.closedAt)throw Object.assign(new Error('Constat non terminé.'),{status:409});
   const token=await msAccessToken(user.id);if(!token)throw Object.assign(new Error('Connectez OneDrive (droit d’écriture) pour ranger les constats terminés.'),{status:428});
-  const base=await missionFolder(user,v,token);if(!base)throw Object.assign(new Error('Pas de dossier OneDrive trouvé pour ce constat : vérifiez sa référence et le lien « Ouvrir » (Dossier OneDrive) de sa ligne dans le tableau de suivi'),{status:422});
+  const found=await missionFolder(user,v,token),base=found.path;console.log(`Rangement OneDrive ${draftId.slice(0,8)} (${String(v.caseReference||'').slice(0,20)}) : dossier ${base?'trouvé ('+found.how+')':'non trouvé ('+found.how+')'}`);
+  if(!base)throw Object.assign(new Error('Pas de dossier OneDrive trouvé pour ce constat : vérifiez sa référence et le lien « Ouvrir » (Dossier OneDrive) de sa ligne dans le tableau de suivi'),{status:422});
   // Un dossier par jour de visite ; un second constat du même jour va dans « AAAA-MM-JJ (2) ».
   const day=/^\d{4}-\d{2}-\d{2}$/.test(v.visitDate||'')?v.visitDate:String(v.closedAt).slice(0,10),used=new Set(listVisits(user.id).filter(c=>c.draftId!==draftId).map(c=>readConstat(user.id,c.draftId)?.onedrive?.folder).filter(Boolean));
   let folder=`${base}/CONSTATS/${day}`;for(let n=2;used.has(folder);n++)folder=`${base}/CONSTATS/${day} (${n})`;
@@ -316,10 +326,12 @@ async function depositVisit(user,draftId,body){const record=readConstat(user.id,
   for(const p of v.photos||[])for(const [field,suffix] of [['src',''],['annotatedSrc','_annotee'],['drawing','_note-manuscrite'],['audio','_son']]){const m=/^fichier:([a-f0-9]{64})$/.exec(p[field]||'');if(!m)continue;
     let type;try{type=fs.readFileSync(blobPath(user.id,m[1])+'.type','utf8');}catch{continue;}
     files.push({path:`${folder}/Photos/Photo_${String(p.number).padStart(2,'0')}_${slug(p.subject)||'photo'}${suffix}.${FILE_EXT[type]||'bin'}`,file:blobPath(user.id,m[1]),type});}
+  if(!files.some(f=>f.type==='text/html'))throw Object.assign(new Error('Rapport absent : rouvrez le constat puis terminez-le à nouveau'),{status:422});
   try{for(const f of files)await graphUpload(token,f.path,f.data||fs.readFileSync(f.file),f.type);}
   catch(error){if(error.status===401||error.status===403)throw Object.assign(new Error('OneDrive refuse l’écriture : reconnectez OneDrive pour accorder le droit d’écriture.'),{status:428});throw error;}
   const latest=readConstat(user.id,draftId)||record;latest.onedrive={ok:true,at:new Date().toISOString(),folder,fichiers:files.length,version:record.version};delete latest.dossierTermine;
-  writeAtomic(constatPath(user.id,draftId),JSON.stringify(latest));return {fichiers:files.length,dossier:folder.split('/').slice(-3).join('/')};}
+  writeAtomic(constatPath(user.id,draftId),JSON.stringify(latest));console.log(`Rangement OneDrive ${draftId.slice(0,8)} : ${files.length} fichier(s) déposé(s)`);
+  return {fichiers:files.length,dossier:folder.split('/').slice(-4).join('/')};}
 // Dossier terminé ou retiré du tableau de suivi : ses constats déjà rangés dans OneDrive sont effacés du serveur (et des
 // appareils) ; les autres sont conservés et signalés. Fichiers (photos, sons) devenus inutiles effacés (plus d'une heure).
 async function cleanupEndedDossiers(user,refs){if(!refs.length||!storeReady)return;const ended=new Set(refs);
@@ -420,7 +432,7 @@ async function api(req,res,pathname){
   if(depotMatch&&req.method==='POST'){const user=await sessionUser(req,String(new URL(req.url,'http://localhost').searchParams.get('profil')||''));if(!user)return send(res,401,{message:'Profil non connecté.'});
     if(!graph.ready||!storeReady)return send(res,503,{message:'Rangement OneDrive non configuré sur le serveur.'});
     try{let body;try{body=JSON.parse(await readBody(req,40e6));}catch(error){if(error.status)throw error;return send(res,400,{message:'Rapport invalide.'});}return send(res,200,await depositVisit(user,depotMatch[1],body));}
-    catch(error){if(error.status&&error.status<500)return send(res,error.status,{message:error.status===413?'Rapport trop volumineux.':error.message});console.error('Rangement OneDrive :',error.message);return send(res,502,{message:'Rangement dans OneDrive impossible pour le moment.'});}}
+    catch(error){if(error.status&&error.status<500){console.warn(`Rangement OneDrive ${depotMatch[1].slice(0,8)} refusé (${error.status}) : ${String(error.message).slice(0,120)}`);return send(res,error.status,{message:error.status===413?'Rapport trop volumineux.':error.message});}console.error('Rangement OneDrive :',error.message);return send(res,502,{message:'Rangement dans OneDrive impossible pour le moment.'});}}
   const blobPathMatch=/^\/api\/fichiers\/([a-f0-9]{64})$/.exec(pathname),constatMatch=/^\/api\/constats(?:\/([\w-]{6,60}))?$/.exec(pathname);
   if(blobPathMatch||constatMatch||pathname==='/api/fichiers/manquants'){
     const url=new URL(req.url,'http://localhost'),user=await sessionUser(req,String(url.searchParams.get('profil')||''));

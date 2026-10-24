@@ -46,7 +46,7 @@ const emptyDraft=d=>!d.photos?.length&&!String(d.caseName||'').trim()&&!String(d
 const statusOf=d=>d.closedAt?(d.lastExport?'Rapport envoyé':'Finalisé'):d.lastExport?'Finalisé':'Brouillon';
 // Contenu envoyé au serveur ; l'empreinte ignore l'heure d'enregistrement et le sujet affiché, pour ne pas
 // renvoyer (ni signaler en conflit) un constat simplement rouvert sans modification.
-async function cloudVersionOf(draft,blobs=new Map()){const visit=structuredClone(draft);delete visit.closureReport;delete visit.storedInOneDrive;if(visit.caseType==='ej'){visit.attendance=[];visit.clientName='';visit.clientAddress='';}
+async function cloudVersionOf(draft,blobs=new Map()){const visit=structuredClone(draft);delete visit.closureReport;delete visit.storedInOneDrive;delete visit.depositError;if(visit.caseType==='ej'){visit.attendance=[];visit.clientName='';visit.clientAddress='';}
   // Identité du dossier seulement (ses dates changent à chaque synchronisation des dossiers).
   if(visit.dossier&&typeof visit.dossier==='object'){const {id,name,reference,type,address,client,status,airtableId}=visit.dossier;visit.dossier={id,name,reference,type,address,client:visit.caseType==='ej'?'':client,status,airtableId};}
   const clean=await extractBlobs(visit,blobs),{savedAt,activeSubject,...content}=clean;
@@ -67,7 +67,7 @@ async function pushDraft(id,force=false){
   if(res.status===409){setCloudMeta(id,{conflict:body.constat||{}});return 'conflict';}
   if(!res.ok)throw new Error(body.message||'Sauvegarde serveur impossible');
   setCloudMeta(id,{version:body.constat.version,fingerprint,syncedAt:new Date().toISOString(),conflict:null});clearDirty(id,stamp);cloud.remote=null;return 'ok';}
-async function flushCloud(){if(!CLOUD||cloud.running||!ready)return;clearTimeout(cloud.timer);
+async function flushCloud(){if(!CLOUD||cloud.running||!ready)return;clearTimeout(cloud.timer);cloud.timer=null;
   if(!navigator.onLine){cloud.error='';renderCloudStatus();return;}
   cloud.running=true;cloud.error='';
   let changed=false;
@@ -77,22 +77,24 @@ async function flushCloud(){if(!CLOUD||cloud.running||!ready)return;clearTimeout
     for(const id of Object.keys(dirtyIds())){if(cloudMeta()[id]?.conflict)continue;const result=await pushDraft(id);changed||=result==='ok'||result==='conflict';}
     changed=(await flushDeposits())||changed;}
   catch(error){cloud.error=error.message||'Sauvegarde serveur impossible';scheduleCloud(60000);}
-  finally{cloud.running=false;renderCloudStatus();if(changed)renderDrafts();}}
+  finally{cloud.running=false;renderCloudStatus();if(changed)renderDrafts();if(cloud.again){cloud.again=false;scheduleCloud(300);}}}
 // Constats terminés à ranger dans OneDrive : le rapport préparé à la clôture est envoyé au serveur, qui le dépose avec les
 // photos dans le dossier OneDrive de la mission (une fois le constat terminé sauvegardé sur le serveur).
 async function flushDeposits(){let changed=false;
   for(const id of Object.keys(deposits())){if(dirtyIds()[id]||!cloudMeta()[id]?.version)continue;
     const draft=(await listDrafts()).find(d=>d.draftId===id),forget=()=>{const all=deposits();delete all[id];writeMap(CLOUD_DEPOSIT_KEY,all);};
     if(!draft||!draft.closedAt){forget();continue;}
-    const res=await cloudFetch('/api/constats/'+encodeURIComponent(id)+'/depot',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({html:draft.closureReport?.html||'',name:draft.closureReport?.name||''})});
+    const report=closureReport(draft)||{html:'',name:''};
+    const res=await cloudFetch('/api/constats/'+encodeURIComponent(id)+'/depot',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({html:report.html,name:report.name})});
     const body=await res.json().catch(()=>({}));
     if(res.status===428){cloud.error=body.message;continue;}
     if(res.ok||res.status===422||res.status===409||res.status===404){forget();changed=true;
-      if(res.ok){const {closureReport,depositError,...rest}=draft;await writeDraftRecord({...rest,storedInOneDrive:{at:new Date().toISOString(),fichiers:body.fichiers}});cloud.remote=null;notify(`Constat rangé dans OneDrive (${body.fichiers} fichier(s)) : ${body.dossier}.`);}
-      else{await writeDraftRecord({...draft,depositError:String(body.message||'erreur').slice(0,300)});notify('Constat non rangé dans OneDrive : '+(body.message||'erreur')+'.');}continue;}
+      if(res.ok){const {closureReport:old,depositError,...rest}=draft;await writeDraftRecord({...rest,storedInOneDrive:{at:new Date().toISOString(),fichiers:body.fichiers,dossier:String(body.dossier||'').slice(0,200)}});cloud.remote=null;notify(`Constat rangé dans OneDrive (${body.fichiers} fichier(s)) : ${body.dossier}.`);}
+      else{const {closureReport:old,...rest}=draft;await writeDraftRecord({...rest,depositError:String(body.message||'erreur').slice(0,300)});notify('Constat non rangé dans OneDrive : '+(body.message||'erreur')+'.');}continue;}
     throw new Error(body.message||'Rangement dans OneDrive impossible');}
   return changed;}
-function scheduleCloud(delay=15000){if(!CLOUD)return;clearTimeout(cloud.timer);cloud.timer=setTimeout(flushCloud,delay);}
+// Un envoi déjà prévu plus tôt n'est jamais repoussé (ex. clôture suivie de l'enregistrement du constat vierge).
+function scheduleCloud(delay=15000){if(!CLOUD)return;const due=Date.now()+delay;if(cloud.timer&&cloud.due<=due)return;clearTimeout(cloud.timer);cloud.due=due;cloud.timer=setTimeout(()=>{cloud.timer=null;flushCloud();},delay);}
 // Chaque enregistrement local réussi marque le constat « à envoyer ».
 if(CLOUD){const basePersist=persistVisit;persistVisit=function(){const id=state.draftId;return basePersist().then(ok=>{if(ok&&id){markDirty(id);scheduleCloud();}return ok;});};
   window.addEventListener('online',()=>scheduleCloud(1000));
@@ -127,7 +129,7 @@ function cloudBadge(d){if(!CLOUD||emptyDraft(d))return '';const meta=cloudMeta()
   if(dirtyIds()[d.draftId])return `<p class="cloud-badge">⏳ Modifications en attente d’envoi au serveur</p>`;
   if(remote&&remote.version>(meta.version||0))return `<p class="cloud-badge">☁ Version plus récente sur un autre appareil</p><div class="cloud-actions"><button class="secondary" data-cloud-pull="${escapeHtml(d.draftId)}">Mettre à jour cet appareil</button></div>`;
   const stored=storedInOneDrive(d),ended=remote?.dossierTermine&&!stored;
-  return (deposits()[d.draftId]?'<p class="cloud-badge">⏳ À ranger dans OneDrive</p>':d.closedAt&&!stored&&d.depositError?`<p class="cloud-badge warn">⚠ Non rangé dans OneDrive : ${escapeHtml(d.depositError)}.</p><div class="cloud-actions"><button class="secondary" data-retry-deposit="${escapeHtml(d.draftId)}">Réessayer le rangement</button></div>`:d.closedAt&&!stored&&CLOUD?`<div class="cloud-actions"><button class="secondary" data-retry-deposit="${escapeHtml(d.draftId)}">Ranger dans OneDrive</button></div>`:stored?`<p class="cloud-badge ok">📁 Rangé dans OneDrive le ${escapeHtml(new Date(stored.at).toLocaleString('fr-FR'))}</p>`:'')
+  return (deposits()[d.draftId]?'<p class="cloud-badge">⏳ À ranger dans OneDrive</p>':d.closedAt&&!stored&&d.depositError?`<p class="cloud-badge warn">⚠ Non rangé dans OneDrive : ${escapeHtml(d.depositError)}.</p><div class="cloud-actions"><button class="secondary" data-retry-deposit="${escapeHtml(d.draftId)}">Réessayer le rangement</button></div>`:d.closedAt&&!stored&&CLOUD?`<div class="cloud-actions"><button class="secondary" data-retry-deposit="${escapeHtml(d.draftId)}">Ranger dans OneDrive</button></div>`:stored?`<p class="cloud-badge ok">📁 Rangé dans OneDrive le ${escapeHtml(new Date(stored.at).toLocaleString('fr-FR'))}${stored.dossier?' : …/'+escapeHtml(stored.dossier):''}</p>`:'')
     +(ended?'<p class="cloud-badge warn">⚠ Dossier terminé dans le tableau de suivi : ce constat n’est pas rangé dans OneDrive. Rouvrez-le et terminez-le pour le ranger, ou supprimez-le.</p>':'')
     +(meta.version?'<p class="cloud-badge ok">☁ Sauvegardé sur le serveur</p>':'');}
 async function renderCloudSection(local){const box=$('#cloud-list');if(!box)return;if(!CLOUD){box.innerHTML='';return;}
@@ -151,9 +153,9 @@ document.addEventListener('click',async e=>{const pull=e.target.closest('[data-c
 // Rangement relancé à la main (lien du tableau corrigé, OneDrive reconnecté…). Le rapport est reconstruit si besoin.
 document.addEventListener('click',async e=>{const b=e.target.closest('[data-retry-deposit]');if(!b)return;const id=b.dataset.retryDeposit;b.disabled=true;
   try{const draft=(await listDrafts()).find(d=>d.draftId===id);if(!draft)return;
-    if(!draft.closureReport){if(visitBusy()){alert('Terminez l’opération en cours.');return;}if(id!==state.draftId&&unsaved)await persistVisit();
-      const current=snapshot();restoreState(draft);const report=closureReport();restoreState(current);if(report)draft.closureReport=report;}
-    const {depositError,...rest}=draft;await writeDraftRecord(rest);const all=deposits();all[id]=Date.now();writeMap(CLOUD_DEPOSIT_KEY,all);renderDrafts();await flushCloud();}
+    const {depositError,closureReport:old,...rest}=draft;await writeDraftRecord(rest);const all=deposits();all[id]=Date.now();writeMap(CLOUD_DEPOSIT_KEY,all);renderDrafts();
+    // Envoi en cours : le rangement passera juste après (un envoi déjà lancé ne le traite pas).
+    if(cloud.running)cloud.again=true;else await flushCloud();}
   finally{b.disabled=false;}});
 // « Terminer ce constat » : il quitte le constat actuel et passe dans « Constats terminés ».
 function renderCloseStatus(){const box=$('#close-status');if(!box)return;const meta=cloudMeta()[state.draftId]||{};
@@ -165,20 +167,20 @@ $('#close-visit').addEventListener('click',async()=>{
   state.closedAt=new Date().toISOString();
   if(!(await persistVisit())){state.closedAt='';return;}
   // Rapport préparé maintenant (constat affiché) pour son rangement dans OneDrive avec les photos.
-  const closedId=state.draftId,report=CLOUD?closureReport():null;
+  const closedId=state.draftId;
   // Constat vierge sans demande caméra / micro / position : elles viendront au prochain constat réellement démarré.
   await startNewVisit(undefined,{prepareAccess:false});showPage('constats');
-  // Après le changement de constat (qui réenregistre le constat terminé), le rapport est joint à son enregistrement local.
-  if(CLOUD){if(report){const draft=(await listDrafts()).find(d=>d.draftId===closedId);if(draft)await writeDraftRecord({...draft,closureReport:report});}
-    const all=deposits();all[closedId]=Date.now();writeMap(CLOUD_DEPOSIT_KEY,all);}
+  if(CLOUD){const all=deposits();all[closedId]=Date.now();writeMap(CLOUD_DEPOSIT_KEY,all);}
   scheduleCloud(500);
   notify(CLOUD?'Constat terminé : rapport et photos seront rangés dans le dossier OneDrive de la mission.':'Constat terminé : retrouvez-le dans « Mes brouillons › Constats terminés ».');
 });
-function closureReport(){try{if(pvMode())return {html:buildPvHtml(pvReportData()),name:pvFileName(state.pv.document,state.caseReference,state.visitDate)};
-    const simple=state.caseType==='ep'&&state.pv.document==='simple';
-    return {html:buildConstatHtml({simple,expertSignature:state.expertSigns?state.expertSignature:null,type:state.caseType,reference:state.caseReference,caseName:state.caseName,visitDate:state.visitDate,photos:state.photos,subjects:state.subjects,actions:collectActions(),position:state.position,hideNominatif:state.hideNominatif,attendance:state.attendance,...Object.fromEntries(REPORT_TEXT_FIELDS.map(key=>[key,reportFieldValue(key)]))}),
-      name:simple?pvFileName('simple',state.caseReference,state.visitDate):reportFileName(state.caseReference,state.visitDate)};}
-  catch(error){console.warn('Rapport de clôture :',error);return null;}}
+// Rapport de rangement construit à partir du constat enregistré (sans toucher au constat affiché ni stocker le rapport).
+function closureReport(d){try{const ej=d.caseType==='ej',field=key=>ej&&CLIENT_FIELDS.includes(key)?'':d[key]||'',signature=d.expertSigns?d.expertSignature:null;
+    if(d.caseType==='ep'&&d.pv&&pvIsPv(d.pv))return {html:buildPvHtml({expertSignature:signature,reference:d.caseReference,caseName:d.caseName,visitDate:d.visitDate,siteAddress:d.siteAddress,presents:d.presents,attendance:d.attendance||[],photos:d.photos,subjects:d.subjects,pv:d.pv}),name:pvFileName(d.pv.document,d.caseReference,d.visitDate)};
+    const simple=d.caseType==='ep'&&d.pv?.document==='simple';
+    return {html:buildConstatHtml({simple,expertSignature:signature,type:d.caseType,reference:d.caseReference,caseName:d.caseName,visitDate:d.visitDate,photos:d.photos,subjects:d.subjects,actions:d.actions||[],position:d.position,hideNominatif:d.hideNominatif,attendance:d.attendance||[],...Object.fromEntries(REPORT_TEXT_FIELDS.map(key=>[key,field(key)]))}),
+      name:simple?pvFileName('simple',d.caseReference,d.visitDate):reportFileName(d.caseReference,d.visitDate)};}
+  catch(error){console.warn('Rapport de rangement :',error);return null;}}
 async function deleteDraft(draftId){const db=await database;if(!db){localStorage.removeItem(STORAGE_KEY+'-draft-'+draftId);return;}
   return new Promise((resolve,reject)=>{const tx=db.transaction('drafts','readwrite');tx.objectStore('drafts').delete(draftId);tx.oncomplete=resolve;tx.onerror=()=>reject(tx.error);});}
 // Suppression d'un constat (en cours ou terminé) : effacé de cet appareil, puis du serveur, d'Airtable et des autres appareils.
