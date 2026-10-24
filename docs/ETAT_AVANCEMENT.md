@@ -148,7 +148,8 @@ Le prototype actuel comprend :
 
 ## Sortie d'Airtable — étape 2 (24 octobre 2026) : rangement dans OneDrive
 
-- À la clôture d'un constat, le rapport HTML (modèle CDL ou PV) et les photos sont rangés dans le dossier OneDrive de la mission (`Constats/AAAA-MM-JJ/`, photos dans `Photos/`). Droit délégué `Files.ReadWrite` ajouté dans Microsoft Entra par Christel ; chaque profil doit reconnecter OneDrive une fois.
+- À la clôture d'un constat, le rapport HTML (modèle CDL ou PV) et les photos sont rangés dans le dossier OneDrive de la mission (`CONSTATS/AAAA-MM-JJ/`, photos dans `Photos/`). Droit délégué `Files.ReadWrite` ajouté dans Microsoft Entra par Christel ; chaque profil doit reconnecter OneDrive une fois.
 - Dossier terminé ou retiré du tableau : ses constats rangés sont effacés du serveur et des appareils ; les autres sont signalés. Suppression de dossier retirée de l'application.
 - La copie des constats dans Airtable reste active jusqu'à l'étape 3 (comptes sur le serveur, arrêt d'Airtable).
 - Un constat terminé et rangé dans OneDrive quitte « Mes brouillons » ; il reste dans son dossier (« Rouvrir pour compléter », tant que le dossier est en cours) et dans l'onglet « Rapports ». Rouvert puis terminé à nouveau, il est rangé de nouveau au même endroit.
+- 24/10/2026 (retours) : sous-dossier de rangement nommé `CONSTATS` (majuscules) dans chaque dossier de mission ; dossier retrouvé même quand le lien « Ouvrir » du tableau est relatif ou codé (`file:///…%20…`), sinon par le n° d'expertise dans le dossier du tableau ; bouton « Ranger dans OneDrive / Réessayer le rangement » pour un constat terminé non rangé (motif affiché) ; plus de demande caméra / micro / position après la clôture ; titres complets (code) dans « Sur vos autres appareils ».

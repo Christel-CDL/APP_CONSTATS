@@ -17,6 +17,7 @@ const FILES={'/EXPERT%20JUDICIAIRE/DOSSIERS/Dossiers%20en%20cours/Tableau_suivi_
       const n=ms.tokens.length;ms.access.add('acc-'+n);ms.refresh.add('ref-'+n);return json(200,{access_token:'acc-'+n,refresh_token:'ref-'+n,expires_in:61});}
     if(!ms.access.has(String(req.headers.authorization).replace('Bearer ','')))return json(401,{error:'bad token'});
     if(req.method==='PUT'){const u=/^\/v1\.0\/me\/drive\/root:(.+):\/content$/.exec(req.url);ms.uploads.push({path:decodeURIComponent(u[1]),size:Buffer.byteLength(body),type:req.headers['content-type'],body});return json(201,{id:'x'});}
+    if(req.url.startsWith('/v1.0/me/drive/root:/EXPERT%20JUDICIAIRE/DOSSIERS/Dossiers%20en%20cours:/children'))return json(200,{value:[{name:'Tableau_suivi_expertises.xlsx',file:{}},{name:'AUTRE_MI26-01000_01-01-2026',folder:{}},{name:'NOUVEAU_TJ_MI26-0100_01-01-2026',folder:{}}]});
     const m=/^\/v1\.0\/me\/drive\/root:(.+?)(:\/content)?$/.exec(req.url),file=m&&FILES[m[1]];if(!file)return json(404,{error:'not found'});
     if(m[2]){ms.downloads++;res.writeHead(200,{'Content-Type':'application/octet-stream'});return res.end(file);}
     json(200,{eTag:ms.etag,lastModifiedDateTime:'2026-10-24T08:15:00Z'});});}).listen(MS);
@@ -78,6 +79,15 @@ const FILES={'/EXPERT%20JUDICIAIRE/DOSSIERS/Dossiers%20en%20cours/Tableau_suivi_
     assert.ok(JSON.parse(fs.readFileSync(path.join(dataDir,'dossiers','dev-ej.json'),'utf8')).manuels.some(d=>d.name==='ZZ HORS TABLEAU'));
     const h={'Content-Type':'application/json',Origin:BASE};
     assert.equal((await page.request.patch(BASE+'/api/projets/tab-EJ26-0099',{headers:h,data:{profil:'dev-ej',name:'X'}})).status(),409,'Dossier du tableau : modification refusée');
+    // Clôture en expertise judiciaire, ligne sans lien « Dossier OneDrive » : dossier retrouvé par son n° dans le dossier du tableau ;
+    // pas de demande caméra / micro / position pour le constat vierge qui suit
+    const png='data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==';
+    const ejDraft=await page.evaluate(async src=>{await startNewVisit(readDossiers().find(d=>d.name==='EJ26-0100_NOUVEAU-DOSSIER').id);addPhoto(src,'Vue générale',new Date().toISOString(),null,'import');saveVisit();return state.draftId;},png);
+    await page.evaluate(()=>{state.currentStep=4;renderStep();});await page.click('#close-visit');
+    for(let i=0;i<200&&!ms.uploads.some(u=>u.path.includes('NOUVEAU_TJ_MI26-0100')&&u.path.endsWith('.png'));i++)await page.waitForTimeout(100);
+    assert.ok(ms.uploads.some(u=>/^\/EXPERT JUDICIAIRE\/DOSSIERS\/Dossiers en cours\/NOUVEAU_TJ_MI26-0100_01-01-2026\/CONSTATS\/[\d-]+\/EJ26-0100_CONSTAT_[\d-]+\.html$/.test(u.path)),'Rapport EJ rangé dans le dossier retrouvé par son n°');
+    assert.equal(await page.evaluate(()=>visitAccess.attempted),false,'Aucune demande d’accès après la clôture');
+    assert.ok(ejDraft);
     // Accès révoqué chez Microsoft : retour à « Connecter OneDrive », dernière lecture conservée
     ms.refresh.clear();await page.waitForTimeout(1200);
     const revoked=await (await page.request.get(BASE+'/api/projets?profil=dev-ej&tableau=force')).json();assert.equal(revoked.tableau.etat,'a-connecter');assert.equal(revoked.projets.length,3);assert.equal(revoked.complet,true);
@@ -91,14 +101,13 @@ const FILES={'/EXPERT%20JUDICIAIRE/DOSSIERS/Dossiers%20en%20cours/Tableau_suivi_
     assert.equal(priv[0].type,'Conseil / AMO');
     const store=JSON.parse(fs.readFileSync(path.join(dataDir,'dossiers','dev-ep.json'),'utf8'));
     assert.equal(store.tableaux.ep.rows[0].onedrive,'EXPERTISES/Expertises 2026/ALPHA Dossier','Dossier OneDrive (lien web) retenu sur le serveur');
-    assert.equal(store.tableaux.cs.rows[0].onedrive,'DEV-CONSULT/GAMMA','Dossier OneDrive (chemin Windows) retenu sur le serveur');
+    assert.equal(store.tableaux.cs.rows[0].onedrive,'DEV-CONSULT/GAMMA Dossier','Dossier OneDrive (lien relatif au tableau) retenu sur le serveur');
     assert.match(await ep.evaluate(()=>tableauMessage(dossierSync.tableau)),/1 expertises privées en cours, 1 missions de conseil en cours/);
     // ── Clôture d'un constat : rapport et photos rangés dans le dossier OneDrive de la mission ──
-    const png='data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==';
     const draftId=await ep.evaluate(async src=>{await startNewVisit(readDossiers().find(d=>d.name==='EP26-001_ALPHA').id);addPhoto(src,'Vue générale',new Date().toISOString(),null,'import');state.photos[0].description='Fissure';saveVisit();return state.draftId;},png);
     await ep.evaluate(()=>{state.currentStep=4;renderStep();});await ep.click('#close-visit');
-    for(let i=0;i<200&&!ms.uploads.some(u=>u.path.endsWith('.png'));i++)await ep.waitForTimeout(100);
-    const day=await ep.evaluate(id=>listDrafts().then(l=>l.find(d=>d.draftId===id).visitDate),draftId),folder='/EXPERTISES/Expertises 2026/ALPHA Dossier/Constats/'+day;
+    for(let i=0;i<200&&!ms.uploads.some(u=>u.path.includes('ALPHA Dossier')&&u.path.endsWith('.png'));i++)await ep.waitForTimeout(100);
+    const day=await ep.evaluate(id=>listDrafts().then(l=>l.find(d=>d.draftId===id).visitDate),draftId),folder='/EXPERTISES/Expertises 2026/ALPHA Dossier/CONSTATS/'+day;
     const report=ms.uploads.find(u=>u.path.startsWith(folder+'/')&&u.path.endsWith('.html'));assert.ok(report,'Rapport HTML rangé dans le dossier de la mission');assert.match(report.body,/Fissure/);
     assert.ok(ms.uploads.some(u=>u.path===folder+'/Photos/Photo_01_Vue-generale.png'),'Photo rangée dans Photos/');
     let stored=false;for(let i=0;i<100&&!stored;i++){stored=await ep.evaluate(id=>listDrafts().then(l=>!!l.find(d=>d.draftId===id)?.storedInOneDrive&&!Object.keys(deposits()).length),draftId);if(!stored)await ep.waitForTimeout(100);}
