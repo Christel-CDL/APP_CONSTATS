@@ -334,9 +334,10 @@ async function api(req,res,pathname){
     return send(res,405,{message:'Méthode non autorisée.'});
   }
   // Connexion OneDrive (une fois) : le retour s'ouvre parfois hors de l'application (iPad) ; l'état signé, à usage unique, identifie le compte.
+  // Pas d'indice d'adresse : l'e-mail du compte Constats (Gmail…) n'est pas forcément le compte Microsoft qui porte le OneDrive ; choix du compte proposé.
   if(pathname==='/api/microsoft/connexion'&&req.method==='GET'){const user=await sessionUser(req,String(new URL(req.url,'http://localhost').searchParams.get('profil')||''));
     if(!user||!(ROLE_TYPES[user.role]||[]).includes('ej'))return send(res,401,{message:'Profil judiciaire non connecté.'});if(!graph.ready)return send(res,503,{message:'Lecture du tableau non configurée.'});
-    const query=new URLSearchParams({client_id:graph.clientId,response_type:'code',redirect_uri:config.appUrl+'/api/microsoft/retour',response_mode:'query',scope:GRAPH_SCOPE,state:msState(user.id),login_hint:user.email});
+    const query=new URLSearchParams({client_id:graph.clientId,response_type:'code',redirect_uri:config.appUrl+'/api/microsoft/retour',response_mode:'query',scope:GRAPH_SCOPE,state:msState(user.id),prompt:'select_account'});
     res.writeHead(302,{Location:`${graph.login}/${encodeURIComponent(graph.tenant)}/oauth2/v2.0/authorize?${query}`,'Cache-Control':'no-store'});return res.end();}
   if(pathname==='/api/microsoft/retour'&&req.method==='GET'){const url=new URL(req.url,'http://localhost'),state=msReadState(url.searchParams.get('state')),code=url.searchParams.get('code');
     const page=(title,text)=>send(res,200,`<!doctype html><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${title}</title><body style="font-family:system-ui,sans-serif;max-width:32rem;margin:3rem auto;padding:0 1rem;line-height:1.5"><h1 style="font-size:1.3rem">${title}</h1><p>${text}</p><p><a href="/index.html">Revenir à Constats</a></p></body>`,'text/html; charset=utf-8');

@@ -43,7 +43,7 @@ const PORT=8898,BASE=`http://127.0.0.1:${PORT}`,MS=8899,XLSX=fs.readFileSync(pat
     // Connexion : redirection vers Microsoft (droit de lecture seul), retour avec un état signé à usage unique
     const go=await page.request.get(BASE+'/api/microsoft/connexion?profil=dev-ej',{maxRedirects:0});assert.equal(go.status(),302);
     const auth=new URL(go.headers().location);assert.equal(auth.origin+auth.pathname,`http://127.0.0.1:${MS}/tenant-test/oauth2/v2.0/authorize`);
-    assert.equal(auth.searchParams.get('scope'),'offline_access Files.Read');assert.equal(auth.searchParams.get('redirect_uri'),BASE+'/api/microsoft/retour');
+    assert.equal(auth.searchParams.get('scope'),'offline_access Files.Read');assert.equal(auth.searchParams.get('login_hint'),null,'Adresse du compte Constats non imposée');assert.equal(auth.searchParams.get('prompt'),'select_account');assert.equal(auth.searchParams.get('redirect_uri'),BASE+'/api/microsoft/retour');
     const state=auth.searchParams.get('state');
     assert.match(await (await fetch(BASE+'/api/microsoft/retour?code=CODE-OK&state=x'+state)).text(),/non aboutie/,'État falsifié refusé');
     assert.match(await (await fetch(BASE+'/api/microsoft/retour?code=CODE-OK&state='+encodeURIComponent(state))).text(),/OneDrive connecté/,'Retour accepté sans cookie (iPad : ouvert hors de l’application)');
