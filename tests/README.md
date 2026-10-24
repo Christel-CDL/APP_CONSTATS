@@ -34,7 +34,7 @@ Les tests couvrent le parcours complet, la reprise, les inclusions DOCX, les fic
 
 `dictation-ios.cjs` simule l'iPad lancé depuis l'icône de l'écran d'accueil, où la reconnaissance vocale de WebKit ne fonctionne pas : « Dicter » ouvre le grand champ pour la touche micro du clavier. Un refus de la reconnaissance sur un autre navigateur y bascule aussi.
 
-`tableau.cjs` démarre le serveur de production avec un faux service Microsoft (connexion OneDrive, Graph) et le tableau fictif `tests/fixtures/tableau-suivi.xlsx` : connexion à usage unique, import du code, du n° et du statut seulement, bouton « Rechercher dans le tableau de suivi », pas de relecture d'un fichier inchangé, accès révoqué.
+`tableau.cjs` démarre le serveur de production avec un faux service Microsoft (connexion OneDrive, Graph) et le tableau fictif `tests/fixtures/tableau-suivi.xlsx` : connexion à usage unique, seules les expertises « En cours » importées (code et n°), les autres retirées, bouton « Rechercher dans le tableau de suivi », pas de relecture d'un fichier inchangé, accès révoqué.
 
 `pv.cjs` enchaîne un PV de réception puis un PV de levée des réserves sur des données fictives.
 

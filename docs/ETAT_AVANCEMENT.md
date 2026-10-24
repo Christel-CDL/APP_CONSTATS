@@ -131,3 +131,4 @@ Le prototype actuel comprend :
 - Import initial depuis le tableau du 22/10/2026 : 20 dossiers (18 en cours, 1 rapport déposé → Clos, 1 archivé), dont 3 existants mis à jour. Les 3 dossiers « À attribuer » sont ignorés tant que leur n° n'est pas connu.
 - Serveur : le nom saisi pour un dossier est écrit dans « Code Constats » (« Nom du projet » étant une formule, son écriture était refusée par Airtable) ; sans référence, le n° est déduit du code.
 - Mise à jour automatique : réalisée le 24/10/2026 (lecture du tableau par le serveur, voir ACCES_ET_INSTALLATION.md).
+- 24/10/2026 : à la demande de Christel, seules les expertises « En cours » restent dans Airtable ; les autres (en attente, rapport déposé, archivées) en sont retirées à chaque lecture du tableau, et les 2 dossiers terminés importés le 22/10 ont été supprimés.

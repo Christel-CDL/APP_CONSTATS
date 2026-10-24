@@ -1,5 +1,6 @@
 // Tableau de suivi des expertises (Excel OneDrive) → dossiers : connexion OneDrive (OAuth, état à usage unique),
-// lecture du .xlsx par Microsoft Graph (faux service local), import du code, du n° et du statut seulement,
+// lecture du .xlsx par Microsoft Graph (faux service local), import du code et du n° des seules expertises « En cours »
+// (les autres sont retirées d'Airtable et de l'appareil),
 // lecture automatique à l'ouverture du profil judiciaire et bouton « Rechercher dans le tableau de suivi ».
 const {chromium}=require('playwright');
 const {spawn}=require('node:child_process'),assert=require('node:assert/strict'),path=require('node:path'),fs=require('node:fs'),os=require('node:os'),http=require('node:http');
@@ -19,7 +20,8 @@ const PORT=8898,BASE=`http://127.0.0.1:${PORT}`,MS=8899,XLSX=fs.readFileSync(pat
     json(404,{error:'not found'});});}).listen(MS);
   const dataDir=fs.mkdtempSync(path.join(os.tmpdir(),'constats-tableau-')),codes={};let log='';
   const users=[{id:'dev-ej',email:'expert.ej@example.com',name:'Expert TEST-EJ',role:'Expert judiciaire',status:'Actif'}];
-  const projects=[{id:'dev-p90',owner:'dev-ej',fields:{'Nom du projet':'EJ26-0099_Villefictive','Référence':'EJ26-0099','Type':{name:'Expertise judiciaire'},'Statut':{name:'En attente'}}}];
+  const projects=[{id:'dev-p90',owner:'dev-ej',fields:{'Nom du projet':'EJ26-0099_Villefictive','Référence':'EJ26-0099','Type':{name:'Expertise judiciaire'},'Statut':{name:'En attente'}}},
+    {id:'dev-p91',owner:'dev-ej',fields:{'Code Constats':'EJ25-0007_DEPOSE','Référence':'EJ25-0007','Type':{name:'Expertise judiciaire'},'Statut':{name:'En cours'}}}];
   const server=spawn(process.execPath,[path.join(__dirname,'../server/index.cjs')],{env:{...process.env,PORT:String(PORT),APP_ROOT:path.join(__dirname,'..'),APP_URL:BASE,SESSION_SECRET:'t'.repeat(40),
     DEV_USERS:JSON.stringify(users),DEV_PROJECTS:JSON.stringify(projects),DEV_LOG_CODES:'1',DATA_DIR:dataDir,
     MS_CLIENT_ID:'client-test',MS_CLIENT_SECRET:'secret-test',MS_TENANT_ID:'tenant-test',GRAPH_API_URL:`http://127.0.0.1:${MS}/v1.0`,MS_LOGIN_URL:`http://127.0.0.1:${MS}`}});
@@ -33,6 +35,7 @@ const PORT=8898,BASE=`http://127.0.0.1:${PORT}`,MS=8899,XLSX=fs.readFileSync(pat
     for(let i=0;i<50&&!codes['expert.ej@example.com'];i++)await page.waitForTimeout(100);
     await page.locator('#code').fill(codes['expert.ej@example.com']);await page.locator('#code-form button[type=submit]').click();
     await page.waitForURL(/index\.html/);await page.waitForFunction(()=>typeof ready!=='undefined'&&ready);
+    await page.waitForFunction(()=>readDossiers().some(d=>d.airtableId==='dev-p91'));
     // OneDrive pas encore connecté : lien « Connecter OneDrive » à côté du choix du dossier
     await page.waitForFunction(()=>dossierSync.tableau?.etat==='a-connecter');
     await page.evaluate(()=>startNewVisit());await page.locator('#picker-search-tableau').waitFor();
@@ -49,12 +52,12 @@ const PORT=8898,BASE=`http://127.0.0.1:${PORT}`,MS=8899,XLSX=fs.readFileSync(pat
     const stored=fs.readFileSync(path.join(dataDir,'microsoft','dev-ej.json'),'utf8');assert.ok(!stored.includes('ref-'),'Jeton de renouvellement chiffré sur le serveur');
     // « Rechercher dans le tableau de suivi » : dossiers créés ou mis à jour, sans donnée nominative autre que le code
     await page.click('#picker-search-tableau');await page.waitForFunction(()=>!dossierSync.running&&dossierSync.tableau?.etat==='ok');
-    const t=await page.evaluate(()=>dossierSync.tableau);assert.equal(t.ajoutes,3);assert.equal(t.misAJour,1);assert.equal(t.lignes,4);
+    const t=await page.evaluate(()=>dossierSync.tableau);assert.equal(t.ajoutes,1);assert.equal(t.misAJour,1);assert.equal(t.retires,1);assert.equal(t.lignes,4);
     const dossiers=await page.evaluate(()=>readDossiers().map(d=>({name:d.name,reference:d.reference,status:d.status,type:d.type})).sort((a,b)=>a.name.localeCompare(b.name)));
-    assert.deepEqual(dossiers.map(d=>d.name),['EJ25-0007_DEPOSE','EJ26-0099_FICTIF','EJ26-0100_NOUVEAU-DOSSIER','EJ26-0101_APRES-LIGNE-VIDE']);
-    assert.deepEqual(dossiers.map(d=>d.reference),['EJ25-0007','EJ26-0099','EJ26-0100','EJ26-0101']);
-    assert.equal(dossiers[0].status,'Clos','Rapport déposé → Clos');assert.equal(dossiers[1].status,'En cours','Statut repris du tableau');assert.ok(dossiers.every(d=>d.type==='Expertise judiciaire'));
-    assert.match(await page.locator('[data-step="1"] .tableau-status').textContent(),/3 expertise\(s\) ajoutée\(s\), 1 mise\(s\) à jour/);
+    assert.deepEqual(dossiers.map(d=>d.name),['EJ26-0099_FICTIF','EJ26-0100_NOUVEAU-DOSSIER'],'Seules les expertises en cours ; rapport déposé retiré, archivée jamais ajoutée');
+    assert.deepEqual(dossiers.map(d=>d.reference),['EJ26-0099','EJ26-0100']);
+    assert.ok(dossiers.every(d=>d.status==='En cours'&&d.type==='Expertise judiciaire'));
+    assert.match(await page.locator('[data-step="1"] .tableau-status').textContent(),/1 expertise\(s\) ajoutée\(s\), 1 mise\(s\) à jour, 1 terminée\(s\) ou en attente retirée\(s\)/);
     assert.ok(await page.locator('#case-dossier option',{hasText:'EJ26-0100_NOUVEAU-DOSSIER'}).count(),'Nouvelle expertise proposée dans la liste');
     assert.ok(!(await page.evaluate(()=>JSON.stringify(localStorage))).includes('PARTIE_SECRETE'),'Parties jamais reprises');
     // Ouverture suivante (lecture automatique) : fichier inchangé → pas de nouveau téléchargement ; jeton renouvelé
@@ -64,8 +67,8 @@ const PORT=8898,BASE=`http://127.0.0.1:${PORT}`,MS=8899,XLSX=fs.readFileSync(pat
     const again=await (await page.request.get(BASE+'/api/projets?profil=dev-ej&tableau=1')).json();assert.equal(again.tableau.inchange,true);assert.equal(ms.downloads,downloads+1,'Ouverture : pas de relecture inutile');
     // Accès révoqué chez Microsoft : retour à « Connecter OneDrive », sans erreur bloquante
     ms.refresh='revoque';await page.waitForTimeout(1200);
-    const revoked=await (await page.request.get(BASE+'/api/projets?profil=dev-ej&tableau=force')).json();assert.equal(revoked.tableau.etat,'a-connecter');assert.equal(revoked.projets.length,4);
+    const revoked=await (await page.request.get(BASE+'/api/projets?profil=dev-ej&tableau=force')).json();assert.equal(revoked.tableau.etat,'a-connecter');assert.equal(revoked.projets.length,2);
     assert.deepEqual(errors,[]);
-    console.log('PASS: OneDrive connection (read-only scope, signed single-use state, encrypted refresh token), xlsx read via Graph, code/n°/status import (no parties), search button, auto read skipped when unchanged, revoked access');
+    console.log('PASS: OneDrive connection (read-only scope, signed single-use state, encrypted refresh token), xlsx read via Graph, only « En cours » kept, others removed (Airtable and device), code/n° only (no parties), search button, auto read skipped when unchanged, revoked access');
   }finally{await browser.close();server.kill();fake.close();}
 })().catch(error=>{console.error(error);process.exit(1);});

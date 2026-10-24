@@ -126,12 +126,13 @@ async function readBody(req,max){let size=0;const chunks=[];for await(const chun
 // ── Tableau de suivi des expertises judiciaires (Excel, OneDrive) → table Projets ──────────────
 // Le tableau Excel reste la référence. À l'ouverture d'un profil judiciaire (et sur demande), le serveur le lit par
 // Microsoft Graph avec le compte OneDrive de l'expert (connexion OAuth une fois, jeton chiffré dans DATA_DIR) et crée ou
-// met à jour les dossiers : seuls le code (colonne « Code Constats »), le n° d'expertise et le statut sont repris.
+// met à jour les dossiers : seuls le code (colonne « Code Constats ») et le n° d'expertise sont repris. Seules les expertises
+// « En cours » sont gardées dans Airtable : une expertise passée à un autre statut (en attente, rapport déposé, archivée) en est retirée.
 const graph={tenant:env.MS_TENANT_ID||'organizations',clientId:env.MS_CLIENT_ID||'',clientSecret:env.MS_CLIENT_SECRET||'',
   file:'/'+String(env.TABLEAU_SUIVI_CHEMIN||'EXPERT JUDICIAIRE/DOSSIERS/Dossiers en cours/Tableau_suivi_expertises.xlsx').replace(/^\/+/,''),sheet:env.TABLEAU_SUIVI_FEUILLE||'Suivi expertises',
   api:(env.GRAPH_API_URL||'https://graph.microsoft.com/v1.0').replace(/\/+$/,''),login:(env.MS_LOGIN_URL||'https://login.microsoftonline.com').replace(/\/+$/,'')};// adresses : tests uniquement
 graph.ready=!!(graph.clientId&&graph.clientSecret&&config.appUrl);
-const GRAPH_SCOPE='offline_access Files.Read',TABLEAU_STATUS={'en cours':'En cours','en attente':'En attente','rapport déposé':'Clos','archivé':'Archivé'};
+const GRAPH_SCOPE='offline_access Files.Read';
 const TABLEAU_CODE=/^(EJ\d[\w-]*?)_[\w'-]+$/i;
 const msKey=crypto.createHash('sha256').update('microsoft:'+config.secret).digest(),msPath=userId=>path.join(DATA_DIR,'microsoft',safeId(userId)+'.json');
 function msSave(userId,refreshToken){const iv=crypto.randomBytes(12),c=crypto.createCipheriv('aes-256-gcm',msKey,iv),data=Buffer.concat([c.update(refreshToken,'utf8'),c.final()]);
@@ -175,23 +176,27 @@ function xlsxSheet(buf,sheetName){const files=unzip(buf),read=name=>files.get(na
 function tableauRows(values){const header=values.findIndex(row=>row.some(c=>/^code constats/i.test(String(c).trim())));if(header<0)throw new Error('colonne « Code Constats » absente');
   const cols=values[header].map(c=>String(c).trim().toLowerCase()),iCode=cols.findIndex(c=>c.startsWith('code constats')),iStatut=cols.indexOf('statut'),rows=new Map();
   for(const row of values.slice(header+1)){const code=String(row[iCode]??'').trim(),m=TABLEAU_CODE.exec(code);if(!m)continue;
-    const statut=TABLEAU_STATUS[String(row[iStatut]??'').trim().toLowerCase()]||'En cours';rows.set(m[1].toUpperCase(),{reference:m[1].toUpperCase(),code:code.slice(0,200),statut});}
+    const statut=String(row[iStatut]??'').trim().toLowerCase();if(statut)rows.set(m[1].toUpperCase(),{reference:m[1].toUpperCase(),code:code.slice(0,200),enCours:statut==='en cours'});}
   return [...rows.values()];}
 async function projectRecords(user){const ids=(await userProjectIds(user.id)).filter(id=>/^rec\w{14}$|^dev-/.test(id)).slice(0,200);
   if(config.devUsers)return devProjects.filter(p=>ids.includes(p.id)).map(p=>({id:p.id,fields:p.fields}));
   const records=[];for(let i=0;i<ids.length;i+=50){const formula=`OR(${ids.slice(i,i+50).map(id=>`RECORD_ID()='${id}'`).join(',')})`;
     const data=await airtable(`?filterByFormula=${encodeURIComponent(formula)}&pageSize=100`,{},config.projectsTable);records.push(...(data.records||[]));}
   return records;}
-async function applyTableau(user,rows){const records=await projectRecords(user),creates=[],updates=[];
+async function applyTableau(user,rows){const records=await projectRecords(user),creates=[],updates=[],removals=[];
   for(const row of rows){const record=records.find(r=>String(r.fields['Référence']||'').trim().toUpperCase()===row.reference||String(r.fields['Code Constats']||'').trim().toUpperCase()===row.code.toUpperCase());
-    if(!record){creates.push({'Code Constats':row.code,'Référence':row.reference,Type:'Expertise judiciaire',Statut:row.statut,Responsable:[user.id],'Ouvert le':new Date().toISOString().slice(0,10)});continue;}
-    const f=record.fields,fields={};if(f['Code Constats']!==row.code)fields['Code Constats']=row.code;if(selectName(f.Statut)!==row.statut)fields.Statut=row.statut;
+    if(!row.enCours){if(record)removals.push(record.id);continue;}
+    if(!record){creates.push({'Code Constats':row.code,'Référence':row.reference,Type:'Expertise judiciaire',Statut:'En cours',Responsable:[user.id],'Ouvert le':new Date().toISOString().slice(0,10)});continue;}
+    const f=record.fields,fields={};if(f['Code Constats']!==row.code)fields['Code Constats']=row.code;if(selectName(f.Statut)!=='En cours')fields.Statut='En cours';
     if(!String(f['Référence']||'').trim())fields['Référence']=row.reference;if(Object.keys(fields).length)updates.push({id:record.id,fields});}
   if(config.devUsers){for(const u of updates){const p=devProjects.find(x=>x.id===u.id);Object.assign(p.fields,u.fields,u.fields.Statut?{Statut:{name:u.fields.Statut}}:{});}
-    for(const fields of creates)devProjects.push({id:'dev-p'+(devProjects.length+1),owner:user.id,fields:{...fields,Type:{name:fields.Type},Statut:{name:fields.Statut}}});}
+    for(const fields of creates)devProjects.push({id:'dev-p'+(devProjects.length+1),owner:user.id,fields:{...fields,Type:{name:fields.Type},Statut:{name:fields.Statut}}});
+    for(const id of removals)devProjects.splice(devProjects.findIndex(p=>p.id===id),1);}
   else{for(let i=0;i<updates.length;i+=10)await airtable('',{method:'PATCH',body:JSON.stringify({records:updates.slice(i,i+10)})},config.projectsTable);
-    for(let i=0;i<creates.length;i+=10)await airtable('',{method:'POST',body:JSON.stringify({records:creates.slice(i,i+10).map(fields=>({fields}))})},config.projectsTable);}
-  return {ajoutes:creates.length,misAJour:updates.length,lignes:rows.length};}
+    for(let i=0;i<creates.length;i+=10)await airtable('',{method:'POST',body:JSON.stringify({records:creates.slice(i,i+10).map(fields=>({fields}))})},config.projectsTable);
+    // Les constats copiés dans Airtable gardent leur référence (n° d'expertise) ; seul le lien vers le dossier disparaît.
+    for(let i=0;i<removals.length;i+=10)await airtable('?'+removals.slice(i,i+10).map(id=>'records[]='+encodeURIComponent(id)).join('&'),{method:'DELETE'},config.projectsTable);}
+  return {ajoutes:creates.length,misAJour:updates.length,retires:removals.length,lignes:rows.length};}
 // mode « auto » : au plus une lecture toutes les 2 minutes, et seulement si le fichier a changé ; « force » : bouton « Rechercher ».
 async function syncTableau(user,mode){
   if(!(ROLE_TYPES[user.role]||[]).includes('ej'))return null;

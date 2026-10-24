@@ -69,13 +69,15 @@ pas être supprimée), mais elle ne donne accès à rien sans compte autorisé.
 ## Tableau de suivi des expertises judiciaires (OneDrive → dossiers)
 
 Le tableau Excel reste la référence. Sa colonne « Code Constats » (`EJ24-358_NOM`) devient le nom du dossier
-(champ `Code Constats` de la table Projets) ; le n° (`EJ24-358`) devient la `Référence` ; le statut est repris
-(« Rapport déposé » → `Clos`). Les lignes sans code complet (« À attribuer ») sont ignorées. Rien d'autre n'est
+(champ `Code Constats` de la table Projets) ; le n° (`EJ24-358`) devient la `Référence`. **Seules les expertises
+« En cours » figurent dans Airtable** : une expertise passée « En attente », « Rapport déposé » ou « Archivé » en est
+retirée (et de la liste de l'application ; ses constats restent dans « Mes brouillons » et leur copie Airtable garde
+le n° d'expertise). Les lignes sans code complet (« À attribuer ») ou sans statut sont ignorées. Rien d'autre n'est
 lu dans le tableau : ni parties, ni juridiction, ni n° RG, ni observations.
 
 - **Quand ?** À chaque ouverture du profil judiciaire (au plus une fois toutes les 2 minutes, et sans relecture
   si le fichier n'a pas changé), et sur demande avec « 🔎 Rechercher dans le tableau de suivi » (étape 1 d'un
-  constat et « Mes dossiers »). Un dossier n'est jamais supprimé par cette lecture.
+  constat et « Mes dossiers »).
 - **Accès à OneDrive.** Le serveur lit le fichier avec le compte Microsoft de l'expert, par Microsoft Graph,
   avec le seul droit délégué `Files.Read` (lecture des fichiers de ce compte ; aucun droit d'écriture). La
   première fois, l'application affiche « Connecter OneDrive » : se connecter au compte CDL EXPERTISES et

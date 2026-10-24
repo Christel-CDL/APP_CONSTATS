@@ -41,6 +41,8 @@ async function syncDossiers(mode){
     }
     const {projets,tableau}=await projetsApi('GET','',undefined,TABLEAU_SEARCH?'&tableau='+(mode==='force'?'force':'1'):''),list=readDossiers(),hidden=hiddenRemote(),now=new Date().toISOString();
     dossierSync.tableau=tableau?{...tableau,force:mode==='force'}:null;
+    // Dossier retiré d'Airtable (expertise terminée, retirée du suivi) : retiré aussi de l'appareil ; ses constats restent dans « Mes brouillons ».
+    for(let i=list.length-1;i>=0;i--)if(list[i].airtableId&&!list[i].pendingSync&&!projets.some(p=>p.airtableId===list[i].airtableId))list.splice(i,1);
     for(const p of projets){if(hidden.has(p.airtableId))continue;const local=list.find(d=>d.airtableId===p.airtableId);
       if(local){if(!local.pendingSync)Object.assign(local,cleanDossier({...local,...p}));}
       else list.push({id:'at-'+p.airtableId,...cleanDossier(p),airtableId:p.airtableId,createdAt:now,updatedAt:now});}
@@ -54,8 +56,8 @@ function renderSyncStatus(){const box=$('#dossier-sync');if(!box)return;box.hidd
   box.textContent=dossierSync.running?'Synchronisation avec Airtable…':dossierSync.error?`⚠ ${dossierSync.error}${pending?` ${pending} dossier(s) en attente d’envoi.`:''}`:dossierSync.at?`✓ Synchronisé avec Airtable à ${dossierSync.at.toLocaleTimeString('fr-FR',{hour:'2-digit',minute:'2-digit'})}${pending?` · ${pending} en attente`:''}`:'';}
 function tableauMessage(t){if(!t)return '';
   if(t.etat==='ok'){if(t.inchange)return 'Tableau de suivi inchangé depuis la dernière lecture.';const when=t.modifie?` (modifié le ${formatDate(t.modifie,true)})`:'';
-    const changes=[t.ajoutes?`${t.ajoutes} expertise(s) ajoutée(s)`:'',t.misAJour?`${t.misAJour} mise(s) à jour`:''].filter(Boolean).join(', ');
-    return `Tableau de suivi lu${when} : ${changes||'aucun changement'}.${t.force&&!t.ajoutes?' Expertise toujours absente ? Vérifiez sa colonne « Code Constats » (format EJ26-1402_NOM), puis enregistrez le tableau.':''}`;}
+    const changes=[t.ajoutes?`${t.ajoutes} expertise(s) ajoutée(s)`:'',t.misAJour?`${t.misAJour} mise(s) à jour`:'',t.retires?`${t.retires} terminée(s) ou en attente retirée(s)`:''].filter(Boolean).join(', ');
+    return `Tableau de suivi lu${when} : ${changes||'aucun changement'}.${t.force&&!t.ajoutes?' Expertise toujours absente ? Vérifiez dans le tableau son statut (« En cours ») et sa colonne « Code Constats » (format EJ26-1402_NOM), puis enregistrez-le.':''}`;}
   return t.message||'';}
 function renderTableauStatus(){for(const id of ['#search-tableau','#picker-search-tableau']){const b=$(id);if(b){b.hidden=!TABLEAU_SEARCH;b.disabled=dossierSync.running;}}
   const t=dossierSync.tableau;for(const box of $$('.tableau-status')){box.hidden=!TABLEAU_SEARCH||!(t||dossierSync.running);
