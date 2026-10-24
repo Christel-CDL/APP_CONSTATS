@@ -15,6 +15,11 @@ let ready=false, saveTimer, saveQueue=Promise.resolve(), revision=0, unsaved=fal
 let pendingImports=0, pendingCapture=false;
 let recording=null, audioTarget=null, cameraStream=null, cameraVersion=0;
 const speechClass=window.SpeechRecognition || window.webkitSpeechRecognition;
+// iPad/iPhone : la reconnaissance vocale du navigateur ne fonctionne pas dans une application ajoutée à l'écran d'accueil
+// (limite WebKit : elle échoue ou reste muette). On passe alors directement par la touche micro du clavier.
+const appleTouch=/iPad|iPhone|iPod/.test(navigator.userAgent)||(/Macintosh/.test(navigator.userAgent)&&navigator.maxTouchPoints>1);
+const iosStandalone=appleTouch&&(navigator.standalone===true||window.matchMedia?.('(display-mode: standalone)').matches);
+const webSpeech=iosStandalone?null:speechClass;
 const escapeHtml=(value='')=>String(value??'').replace(/[&<>"']/g,ch=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[ch]));
 const createId=()=>globalThis.crypto?.randomUUID?.() || `photo-${Date.now()}-${Math.random().toString(16).slice(2)}`;
 function updateSaveState(message,error=false){$('.save-state').textContent=message;$('.save-state').classList.toggle('save-error',error);}
@@ -64,7 +69,7 @@ $('#capture-list').addEventListener('click',async e=>{const b=e.target.closest('
     case 'annotate':openDrawing(photo.id,'photo');break;
     case 'drawing':openDrawing(photo.id);break;
     case 'expand':openTextEditor(photo,b.dataset.field);break;
-    case 'audio':audioTarget=photo;$('#dictation-help').textContent=speechClass?'La dictée utilise la reconnaissance vocale du navigateur (souvent en ligne). Relisez le texte ajouté.':'Dictée indisponible dans ce navigateur : utilisez la touche micro du clavier dans le grand champ qui va s’ouvrir.';$('#audio-dialog').showModal();break;
+    case 'audio':audioTarget=photo;$('#dictation-help').textContent=webSpeech?'La dictée utilise la reconnaissance vocale du navigateur (souvent en ligne). Relisez le texte ajouté.':iosStandalone?'Sur iPad/iPhone, l’application installée dicte par la touche 🎙 du clavier : un grand champ va s’ouvrir, touchez 🎙 puis parlez.':'Dictée indisponible dans ce navigateur : utilisez la touche micro du clavier dans le grand champ qui va s’ouvrir.';$('#audio-dialog').showModal();break;
     case 'locate':b.disabled=true;const position=await requestPosition();b.disabled=false;if(position){photo.position={...position,source:'manual'};renderCaptures();saveVisit();}else tell('Position indisponible. Vérifiez l’autorisation de localisation.');break;
     case 'delete':if(recording||!confirm(`Supprimer la photo ${photo.number} et ses notes ?`))return;state.photos=state.photos.filter(p=>p!==photo);renderSubjects();renderCaptures();saveVisit();break;
   }
@@ -103,17 +108,19 @@ function finishRecording(message){const session=recording;if(!session)return;cle
 const DICTATION_FATAL=['not-allowed','service-not-allowed','audio-capture','language-not-supported','network'];
 function dictationCommit(session){if(session.segment){session.text=[session.text,session.segment].filter(Boolean).join(' ');session.segment='';}}
 function startDictation(photo){
-  if(!speechClass){openTextEditor(photo,'comment',true);return;}
-  // Le micro gardé ouvert pour « Enregistrer un son » empêche la reconnaissance vocale d'Android de l'utiliser :
-  // il est libéré ici et rouvert automatiquement au prochain enregistrement sonore.
+  // Le micro gardé ouvert pour « Enregistrer un son » empêche la reconnaissance vocale (et la dictée du clavier sur iPad)
+  // de l'utiliser : il est libéré ici et rouvert automatiquement au prochain enregistrement sonore.
   if(typeof visitAccess!=='undefined')visitAccess.tracks.filter(t=>t.kind==='audio').forEach(t=>t.stop());
+  if(!webSpeech){openTextEditor(photo,'comment',true);return;}
   const session={kind:'dictation',photo,stopping:false,text:'',segment:'',quickEnds:0};recording=session;const label=`● Dictée — photo ${photo.number}`;showRecordingBar(label);recordingClock(session,label);renderCaptures();
   $('#recording-live').textContent='Parlez… L’écoute continue jusqu’à « Arrêter ».';
   const android=/Android/i.test(navigator.userAgent);
   const finish=()=>{dictationCommit(session);const text=session.text.trim();
     if(text){photo.comment=[photo.comment?.trim(),text].filter(Boolean).join('\n');photo.transcriptStatus='';}
     const why=session.error==='network'?'la reconnaissance vocale du navigateur nécessite une connexion Internet. Hors réseau, utilisez « Enregistrer un son » ou la touche micro du clavier':session.error==='not-allowed'||session.error==='service-not-allowed'?'micro refusé : autorisez-le dans les réglages du navigateur':session.error==='audio-capture'?'micro occupé ou indisponible : fermez les autres applications qui l’utilisent':session.error;
-    finishRecording(text?`Dictée ajoutée aux commentaires de la photo ${photo.number}. Relisez-la.${why?' (Écoute interrompue : '+why+'.)':''}`:why?`Dictée interrompue : ${why}.`:'Aucun texte reconnu.');};
+    finishRecording(text?`Dictée ajoutée aux commentaires de la photo ${photo.number}. Relisez-la.${why?' (Écoute interrompue : '+why+'.)':''}`:why?`Dictée interrompue : ${why}.`:'Aucun texte reconnu.');
+    // Rien de reconnu : le grand champ s'ouvre pour dicter avec la touche micro du clavier, sans repasser par les menus.
+    if(!text&&session.error!=='network')openTextEditor(photo,'comment',true);};
   const listen=()=>{const recognition=new speechClass(),started=Date.now();session.recognition=recognition;session.error='';
     recognition.lang='fr-FR';recognition.continuous=!android;recognition.interimResults=true;
     // Texte de la séquence en cours (résultats définitifs et provisoires), repris intégralement à chaque événement.
@@ -124,7 +131,7 @@ function startDictation(photo){
         if(session.quickEnds<5){try{listen();return;}catch{}}}
       finish();};
     recognition.start();};
-  try{listen();}catch{finishRecording('Dictée indisponible. Utilisez la touche micro du clavier dans le champ Commentaires.');}
+  try{listen();}catch{finishRecording('Dictée du navigateur indisponible : utilisez la touche micro du clavier.');openTextEditor(photo,'comment',true);}
 }
 async function startSoundRecording(photo){
   if(photo.audio&&!confirm('Remplacer l’enregistrement sonore existant de cette photo ?'))return;
@@ -231,7 +238,7 @@ async function initialize(){if(PROFILE.pending)return;document.body.classList.ad
 // Grand cadre d'écriture (stylet, clavier ou dictée du clavier) pour la description et les commentaires.
 const TEXT_LABELS={description:'Description',comment:'Commentaires / observations',transcript:'Transcription'};let textTarget=null;
 function openTextEditor(photo,field,dictationFallback=false){textTarget={photo,field};$('#text-dialog-title').textContent=`${TEXT_LABELS[field]} — photo ${photo.number}`;const area=$('#text-dialog-field');area.value=photo[field]||'';
-  $('.text-dialog-help').textContent=dictationFallback?'Dictée intégrée indisponible dans ce navigateur : touchez la touche micro du clavier pour dicter, puis Valider.':'Écrivez au stylet directement dans le cadre (Apple Pencil : écriture manuscrite convertie en texte), au clavier, ou avec la touche micro du clavier.';
+  $('.text-dialog-help').textContent=dictationFallback?'Touchez la touche 🎙 du clavier, parlez, puis « Valider ». Le texte s’ajoute aux commentaires.':'Écrivez au stylet directement dans le cadre (Apple Pencil : écriture manuscrite convertie en texte), au clavier, ou avec la touche micro du clavier.';
   $('#text-dialog').showModal();area.focus();area.setSelectionRange(area.value.length,area.value.length);}
 $('#save-text').addEventListener('click',()=>{if(!textTarget)return;textTarget.photo[textTarget.field]=$('#text-dialog-field').value;$('#text-dialog').close();renderCaptures();if(state.currentStep===4)buildReportPreview();saveVisit();});
 for(const id of ['#cancel-text','#close-text'])$(id).addEventListener('click',()=>$('#text-dialog').close());
