@@ -1,4 +1,4 @@
-# État d'avancement — pause du 22 septembre 2026
+# État d'avancement — pause du 24 octobre 2026
 
 ## Périmètre validé
 
@@ -154,3 +154,12 @@ Le prototype actuel comprend :
 - Un constat terminé et rangé dans OneDrive quitte « Mes brouillons » ; il reste dans son dossier (« Rouvrir pour compléter », tant que le dossier est en cours) et dans l'onglet « Rapports ». Rouvert puis terminé à nouveau, il est rangé de nouveau au même endroit.
 - 24/10/2026 (retours) : sous-dossier de rangement nommé `CONSTATS` (majuscules) dans chaque dossier de mission ; dossier retrouvé même quand le lien « Ouvrir » du tableau est relatif ou codé (`file:///…%20…`), sinon par le n° d'expertise dans le dossier du tableau ; bouton « Ranger dans OneDrive / Réessayer le rangement » pour un constat terminé non rangé (motif affiché) ; plus de demande caméra / micro / position après la clôture ; titres complets (code) dans « Sur vos autres appareils ».
 - 24/10/2026 (2e essai réel) : dossiers d'expertise rangés par tribunal (« Dossiers en cours/TJ …/<dossier> ») et nommés sans n° : recherche de secours sur deux niveaux, par n° ou par le nom court du code (correspondance unique) ; rapport reconstruit au moment du rangement (plus stocké sur l'appareil) ; jamais « rangé » sans rapport ; destination affichée sur la carte ; journal du serveur « Rangement OneDrive … » (référence, méthode, nombre de fichiers, refus) ; envoi au serveur non repoussé après la clôture.
+- 24/10/2026 (3e essai réel, version déployée à 17 h 07) : constat test EJ24-358 terminé depuis le téléphone → dossier `TJ ANGOULEME/MATHIAS-OLIVIER TERRASS` trouvé par le nom, 12 fichiers déposés dans `CONSTATS/2026-10-24/` (journal du serveur, 17 h 14–17 h 15). Rangement OneDrive validé. Un blocage avait été signalé sur l'iPad juste après le déploiement (aucune demande reçue par le serveur) : probablement l'ancienne version encore en mémoire ; à revérifier sur l'iPad après fermeture complète de l'application.
+
+## Pause du 24 octobre 2026 — reprise
+
+1. Vérifier sur l'iPad (application fermée puis rouverte) qu'un constat terminé se range bien ; sinon, ajouter au serveur un journal des envois de constats (taille, refus).
+2. Étape 3 de la sortie d'Airtable : comptes de connexion gérés par le serveur, arrêt de la copie des constats dans Airtable, puis arrêt d'Airtable.
+3. Rapports : amélioration de la présentation (Claude Design) — Christel indique ce qui ne lui convient pas dans les rendus actuels.
+4. Photos : renumérotation à la clôture (question ouverte).
+5. Tableau des expertises privées : en 2027, déplacer le tableau ou renseigner `TABLEAU_EP_CHEMIN`.
