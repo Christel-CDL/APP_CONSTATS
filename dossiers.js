@@ -106,20 +106,15 @@ $('#dossier-list').addEventListener('click',async e=>{const b=e.target.closest('
     if(dossier.airtableId){const hidden=hiddenRemote();hidden.add(dossier.airtableId);try{localStorage.setItem(HIDDEN_KEY,JSON.stringify([...hidden]));}catch{}}
     if(writeDossiers(readDossiers().filter(d=>d.id!==dossier.id))){if(state.dossierId===dossier.id){state.dossierId=null;saveVisit();}syncDossierPicker();renderDrafts();}}
 });
-function renderDashboard(drafts){const dossiers=readDossiers(),active=dossiers.filter(d=>d.status==='En cours'),today=new Date().toLocaleDateString('en-CA');
+function renderDashboard(drafts){const dossiers=readDossiers(),active=dossiers.filter(d=>d.status==='En cours');
   $('#today-label').textContent=new Date().toLocaleDateString('fr-FR',{weekday:'long',day:'numeric',month:'long'}).toUpperCase();
   $('#dossier-count').textContent=dossiers.length;$('#dossier-count').hidden=!dossiers.length;
   $('#stat-dossiers').textContent=active.length;$('#stat-dossiers-note').textContent=`${dossiers.length} dossier(s) au total`;
   $('#stat-drafts').textContent=drafts.length;$('#stat-drafts-note').textContent=`${drafts.reduce((n,d)=>n+d.photos.length,0)} photo(s)`;
-  const actions=drafts.flatMap(d=>(Array.isArray(d.actions)?d.actions:[]).filter(a=>a&&(a.text||'').trim()).map(a=>({...a,draft:d})));
-  const upcoming=actions.filter(a=>/^\d{4}-\d{2}-\d{2}$/.test(a.date||'')).sort((a,b)=>a.date.localeCompare(b.date));
-  $('#stat-actions').textContent=actions.length;$('#stat-actions-note').textContent=`${upcoming.filter(a=>a.date<today).length} échéance(s) dépassée(s)`;
   const lastActivity=d=>drafts.filter(v=>v.dossierId===d.id).reduce((max,v)=>String(v.savedAt)>max?String(v.savedAt):max,String(d.updatedAt||''));
   const recent=[...dossiers].sort((a,b)=>lastActivity(b).localeCompare(lastActivity(a))).slice(0,5);
   $('#recent-dossiers').innerHTML=recent.length?recent.map(d=>`<tr><td><span class="folder-icon">▰</span><div><b>${escapeHtml(d.name)}</b><small>${escapeHtml(d.reference||'')}</small></div></td><td>${escapeHtml(d.type)}</td><td>${escapeHtml(d.client)}</td><td>${escapeHtml(formatDate(lastActivity(d),true))}</td><td>${statusBadge(d.status)}</td></tr>`).join('')
     :'<tr><td colspan="5" class="empty-row">Aucun dossier. <button class="link-btn" type="button" data-view="dossiers">Créer un dossier →</button></td></tr>';
-  $('#upcoming-actions').innerHTML=upcoming.length?upcoming.slice(0,4).map(a=>{const date=new Date(a.date+'T12:00:00');return `<div class="appointment${a.date<today?' overdue':''}"><div class="date"><b>${date.getDate()}</b><small>${escapeHtml(date.toLocaleDateString('fr-FR',{month:'short'}).toUpperCase())}</small></div><div><span class="time">${escapeHtml(a.type||'Action')}</span><h3>${escapeHtml(a.text)}</h3><p>${escapeHtml(a.draft.caseName||'Constat de terrain')}</p>${a.recipient?`<small>→ ${escapeHtml(a.recipient)}</small>`:''}</div></div>`;}).join('')
-    :'<p class="empty-note">Aucune suite à donner datée. Ajoutez des échéances à l’étape 3 d’un constat.</p>';
   const card=$('#continue-card');card.hidden=!(state.photos.length||state.caseName);
 }
 $('#recent-dossiers').addEventListener('click',e=>{const b=e.target.closest('[data-view]');if(b)showPage(b.dataset.view);});

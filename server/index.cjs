@@ -228,8 +228,21 @@ async function saveVisit(user,draftId,body){
   const record={version:(current?.version||0)+1,updatedAt:new Date().toISOString(),status:CONSTAT_STATUS.has(body.status)?body.status:'Brouillon',visit:cleanVisit(visit,ej),
     airtable:current?.airtable||{},mirroredVersion:current?.mirroredVersion||0};
   writeAtomic(constatPath(user.id,draftId),JSON.stringify(record));
+  // Modifié sur un appareil après sa suppression sur un autre : le constat est conservé (rien n'est perdu).
+  const tombs=readTombs(user.id);if(tombs[draftId]){delete tombs[draftId];writeTombs(user.id,tombs);}
   scheduleMirror(user.id,draftId,record.status!==current?.status&&record.status!=='Brouillon'?5000:MIRROR_DELAY);
   return constatSummary(record);}
+// Suppression d'un constat (depuis n'importe quel appareil) : fichier du serveur et copie Airtable effacés ; une trace
+// « supprimé » (identifiant et date, 180 jours) permet aux autres appareils de le retirer à leur tour.
+const tombPath=userId=>path.join(DATA_DIR,'supprimes',safeId(userId)+'.json');
+function readTombs(userId){try{const all=JSON.parse(fs.readFileSync(tombPath(userId),'utf8')),limit=Date.now()-180*864e5;return Object.fromEntries(Object.entries(all).filter(([,at])=>Date.parse(at)>limit));}catch{return {};}}
+function writeTombs(userId,tombs){writeAtomic(tombPath(userId),JSON.stringify(tombs));}
+async function deleteVisit(user,draftId){if(!DRAFT_ID.test(draftId))throw Object.assign(new Error('id'),{status:400});
+  const current=readConstat(user.id,draftId),key=user.id+'/'+draftId;clearTimeout(mirrorTimers.get(key));mirrorTimers.delete(key);
+  try{fs.unlinkSync(constatPath(user.id,draftId));}catch{}
+  const tombs=readTombs(user.id);tombs[draftId]=new Date().toISOString();writeTombs(user.id,tombs);
+  if(/^rec\w{14}$/.test(current?.airtable?.id||'')&&(!config.devUsers||env.DEV_MIRROR))await airtable('/'+encodeURIComponent(current.airtable.id),{method:'DELETE'},config.constatsTable).catch(error=>console.warn('Suppression de la copie Airtable du constat :',error.message));
+  return {ok:true};}
 function listVisits(userId){const dir=path.join(DATA_DIR,'constats',safeId(userId));let files=[];try{files=fs.readdirSync(dir).filter(f=>f.endsWith('.json'));}catch{}
   return files.map(f=>{try{return constatSummary(JSON.parse(fs.readFileSync(path.join(dir,f),'utf8')));}catch{return null;}}).filter(Boolean);}
 // Copie lisible dans Airtable
@@ -326,7 +339,8 @@ async function api(req,res,pathname){
         return send(res,201,{ok:true});}
       if(blobPathMatch&&req.method==='GET'){const file=blobPath(user.id,blobPathMatch[1]);let type;try{type=fs.readFileSync(file+'.type','utf8');}catch{return send(res,404,{message:'Fichier absent du serveur.'});}
         res.writeHead(200,{'Content-Type':BLOB_TYPE.test(type)?type:'application/octet-stream','Cache-Control':'private, max-age=31536000, immutable'});return fs.createReadStream(file).pipe(res);}
-      if(constatMatch&&!constatMatch[1]&&req.method==='GET')return send(res,200,{constats:listVisits(user.id)});
+      if(constatMatch&&!constatMatch[1]&&req.method==='GET')return send(res,200,{constats:listVisits(user.id),supprimes:Object.keys(readTombs(user.id))});
+      if(constatMatch&&constatMatch[1]&&req.method==='DELETE')return send(res,200,await deleteVisit(user,constatMatch[1]));
       if(constatMatch&&constatMatch[1]&&req.method==='GET'){const record=readConstat(user.id,constatMatch[1]);return record?send(res,200,{version:record.version,updatedAt:record.updatedAt,visit:record.visit}):send(res,404,{message:'Constat introuvable.'});}
       if(constatMatch&&constatMatch[1]&&req.method==='PUT'){let body;try{body=JSON.parse(await readBody(req,4e6));}catch(error){if(error.status)throw error;return send(res,400,{message:'Constat invalide.'});}
         const result=await saveVisit(user,constatMatch[1],body);return send(res,result.conflict?409:200,{constat:result});}

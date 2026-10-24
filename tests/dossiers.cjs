@@ -12,6 +12,8 @@ async function noSavePicker(browser,options){const context=await browser.newCont
     await page.addInitScript(()=>{navigator.mediaDevices.getUserMedia=async()=>{throw new DOMException('refusé','NotAllowedError');};navigator.geolocation.watchPosition=()=>0;navigator.geolocation.getCurrentPosition=(ok,fail)=>fail({code:1});});
     const url=(process.env.TEST_URL||'http://127.0.0.1:8877/')+'?verification=1';
     await page.goto(url);await page.waitForFunction(()=>typeof ready!=='undefined'&&ready);
+    // Première installation du mode hors connexion : la page se recharge une fois (prise de contrôle du service worker).
+    await page.waitForFunction(()=>!!navigator.serviceWorker.controller);await page.waitForTimeout(500);await page.waitForFunction(()=>typeof ready!=='undefined'&&ready);
     const body=await page.locator('#dashboard').innerText();
     for(const fake of ['Jean','Ormes','Dubois','Logisud','38'])assert.ok(!body.includes(fake),'Plus de donnée fictive : '+fake);
     assert.equal(await page.locator('#stat-dossiers').innerText(),'0');
@@ -78,7 +80,23 @@ async function noSavePicker(browser,options){const context=await browser.newCont
     // Passage en expertise privée : champs client disponibles
     await page.evaluate(()=>{state.currentStep=1;renderStep();});await page.locator('#case-type').selectOption('ep');await page.waitForFunction(()=>state.caseType==='ep');
     await page.evaluate(()=>{state.currentStep=4;renderStep();});assert.ok(await page.locator('[data-report-field="clientName"]').isVisible());
+    // Accueil épuré : un seul « Nouveau constat », plus d'échéances ; constat en cours en tête ; copie de secours dans le constat
+    await page.evaluate(()=>showPage('dashboard'));
+    assert.equal(await page.locator('.new-inspection:visible').count(),1,'Un seul bouton « Nouveau constat »');
+    assert.ok(!(await page.locator('#dashboard').innerText()).includes('Échéances'));assert.equal(await page.locator('#stat-actions').count(),0);
+    assert.ok(await page.locator('#continue-card').isVisible());assert.ok(await page.locator('#continue-card').evaluate(c=>c.compareDocumentPosition(document.querySelector('.stats-grid'))&Node.DOCUMENT_POSITION_FOLLOWING),'Constat en cours au-dessus des indicateurs');
+    assert.ok(!(await page.locator('#backup-visit').isVisible()),'Copie de secours absente de l’accueil');
+    // Onglet Rapports : constats listés, accès direct à la synthèse
+    await page.locator('.nav-item[data-view="rapports"]').click();const current=await page.evaluate(()=>state.draftId);
+    assert.match(await page.locator('#report-list').innerText(),/EJ26-9999_CONSTAT_/);
+    await page.locator(`[data-open-report="${current}"]`).click();await page.waitForFunction(()=>state.currentStep===4&&$('#inspection').classList.contains('active'));
+    assert.ok(await page.locator('#backup-visit').isVisible(),'Copie de secours dans le constat');
+    // Suppression d'un brouillon en cours (constat ouvert) : remplacé par un constat vierge
+    await page.evaluate(()=>showPage('constats'));await page.locator(`[data-delete-draft="${current}"]`).click();
+    let gone=false;for(let i=0;i<60&&!gone;i++){gone=await page.evaluate(async id=>state.draftId!==id&&!(await listDrafts()).some(d=>d.draftId===id),current);if(!gone)await page.waitForTimeout(100);}
+    assert.ok(gone,'Brouillon supprimé et remplacé par un constat vierge');
+    assert.equal(await page.evaluate(()=>state.photos.length),0);
     assert.deepEqual(errors,[]);
-    console.log('PASS: dashboard without fictitious data, dossier create/edit/attach/delete, draft link, backup carries dossier, persistence, EJ without nominative data and HTML report');
+    console.log('PASS: dashboard without fictitious data, dossier create/edit/attach/delete, draft link, backup carries dossier, persistence, EJ without nominative data and HTML report, simplified home (no due dates, single new button, current visit first), reports tab, delete open draft');
   }finally{await browser.close();}
 })().catch(e=>{console.error(e);process.exit(1);});

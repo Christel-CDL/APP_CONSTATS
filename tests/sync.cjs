@@ -87,7 +87,18 @@ const png2='data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAA
     assert.equal(await phone.evaluate(()=>state.lastExport.name),saved.name);
     await phone.evaluate(()=>{window.showSaveFilePicker=async()=>{throw new DOMException('annulé','AbortError');};state.lastExport=null;});
     await phone.click('#export-html');await phone.waitForTimeout(300);assert.equal(await phone.evaluate(()=>state.lastExport),null,'Annulation : rien n’est noté comme enregistré');
+    // ── Suppression sur l'iPad : effacée du serveur et d'Airtable, puis du téléphone à son ouverture suivante
+    await phone.waitForFunction(()=>!Object.keys(dirtyIds()).length&&!cloud.running,null,{timeout:30000});
+    await ipad.evaluate(()=>showPage('constats'));await ipad.click(`#draft-list [data-delete-draft="${draftId}"]`);
+    await ipad.waitForFunction(id=>!Object.keys(JSON.parse(localStorage.getItem(CLOUD_DELETE_KEY)||'{}')).length&&state.draftId!==id,draftId,{timeout:20000});
+    assert.ok(!fs.existsSync(path.join(dataDir,'constats','dev-ej',draftId+'.json')),'Constat effacé du serveur');
+    for(let i=0;i<30&&!writes.some(w=>w.method==='DELETE');i++)await new Promise(r=>setTimeout(r,100));
+    assert.ok(writes.some(w=>w.method==='DELETE'&&/recFAKECONSTAT001$/.test(w.url)),'Copie Airtable supprimée');
+    assert.ok(!(await ipad.evaluate(id=>listDrafts().then(l=>l.some(d=>d.draftId===id)),draftId)));
+    await phone.reload();await phone.waitForFunction(()=>typeof ready!=='undefined'&&ready);
+    let gone=false;for(let i=0;i<200&&!gone;i++){gone=await phone.evaluate(async id=>state.draftId!==id&&!(await listDrafts()).some(d=>d.draftId===id),draftId).catch(()=>false);if(!gone)await phone.waitForTimeout(100);}
+    assert.ok(gone,'Constat retiré du téléphone à son ouverture');
     assert.deepEqual(errors,[]);
-    console.log('PASS: server backup (photos by SHA-256, no inline image, EJ attendance never sent), deferred Airtable copy (reference, address, dossier link, JSON), phone → iPad retrieval without duplicate dossier, auto-update on launch, two-device conflict and forced keep, protected routes, save via file picker (per-expertise folder, cancel)');
+    console.log('PASS: server backup (photos by SHA-256, no inline image, EJ attendance never sent), deferred Airtable copy (reference, address, dossier link, JSON), phone → iPad retrieval without duplicate dossier, auto-update on launch, two-device conflict and forced keep, protected routes, save via file picker (per-expertise folder, cancel), deletion on one device removed from server, Airtable and the other device');
   }finally{await browser.close();server.kill();fake.close();}
 })().catch(e=>{console.error(e);process.exit(1);});

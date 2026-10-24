@@ -40,14 +40,15 @@
 
       <section class="page active" id="dashboard">
         <div class="hero-row">
-          <div><p class="eyebrow" id="today-label"></p><h1>Bonjour</h1><p>Voici un aperçu de vos dossiers et constats enregistrés sur cet appareil.</p></div>
-          <button class="primary new-inspection">＋ Nouveau constat</button>
+          <div><p class="eyebrow" id="today-label"></p><h1>Bonjour</h1><p>Voici un aperçu de vos dossiers et constats.</p></div>
         </div>
 
+        <section class="continue-card" id="continue-card" hidden>
+          <div class="continue-icon">◎</div><div><span class="status draft">BROUILLON</span><h2>Reprendre le constat actuel</h2><p></p></div><button class="secondary resume">Continuer le constat <span>→</span></button>
+        </section>
         <div class="stats-grid">
           <article class="stat-card"><div class="stat-icon green">▱</div><div><p>Dossiers en cours</p><strong id="stat-dossiers">0</strong><small id="stat-dossiers-note"></small></div><button data-go="dossiers" aria-label="Voir les dossiers">→</button></article>
           <article class="stat-card"><div class="stat-icon amber">◷</div><div><p>Constats enregistrés</p><strong id="stat-drafts">0</strong><small id="stat-drafts-note"></small></div><button data-go="constats" aria-label="Voir les brouillons">→</button></article>
-          <article class="stat-card"><div class="stat-icon blue">✓</div><div><p>Actions à suivre</p><strong id="stat-actions">0</strong><small id="stat-actions-note"></small></div><button data-go="constats" aria-label="Voir les brouillons">→</button></article>
         </div>
 
         <div class="dashboard-grid">
@@ -55,21 +56,13 @@
             <div class="panel-title"><div><h2>Dossiers récents</h2><p>Vos derniers dossiers mis à jour</p></div><button class="link-btn" data-view="dossiers">Voir tous <span>→</span></button></div>
             <div class="table-wrap"><table><thead><tr><th>DOSSIER</th><th>TYPE</th><th>CLIENT</th><th>DERNIÈRE ACTIVITÉ</th><th>STATUT</th></tr></thead><tbody id="recent-dossiers"></tbody></table></div>
           </section>
-
-          <aside class="panel agenda">
-            <div class="panel-title"><div><h2>Échéances</h2><p>Suites à donner datées, issues de vos constats</p></div></div>
-            <div id="upcoming-actions"></div>
-          </aside>
         </div>
 
-        <section class="continue-card" id="continue-card" hidden>
-          <div class="continue-icon">◎</div><div><span class="status draft">BROUILLON</span><h2>Reprendre le constat actuel</h2><p></p></div><button class="secondary resume">Continuer le constat <span>→</span></button>
-        </section>
       </section>
 
       <section class="page" id="dossiers"><div class="simple-head"><div><p class="eyebrow">ESPACE DE TRAVAIL</p><h1>Mes dossiers</h1><p>Regroupez vos constats par dossier ou mission. Enregistrés sur cet appareil.</p></div><div class="dossier-head-actions"><button class="secondary" id="sync-dossiers" hidden>↻ Actualiser depuis Airtable</button><button class="secondary" id="search-tableau" hidden>🔎 Rechercher dans le tableau de suivi</button><button class="primary" id="new-dossier">＋ Nouveau dossier</button></div></div><p id="dossier-sync" class="sync-status" role="status" hidden></p><p class="sync-status tableau-status" role="status" hidden></p><div id="dossier-list" class="dossier-list"></div></section>
-      <section class="page" id="constats"><div class="simple-head"><div><p class="eyebrow">REPRENDRE UNE VISITE</p><h1>Mes brouillons</h1><p>Vos constats enregistrés sur cet appareil. Rouvrez-les pour les corriger ou ajouter des photos.</p></div><button class="primary new-inspection">＋ Nouveau constat</button></div><p id="cloud-status" class="sync-status" role="status" hidden></p><div id="draft-list" class="draft-list"></div><div id="cloud-list" class="draft-list"></div></section>
-      <section class="page" id="rapports"><div class="simple-head"><div><p class="eyebrow">DOCUMENTS</p><h1>Rapports</h1><p>Générez et exportez les annexes de vos expertises.</p></div></div><div class="empty-panel"><div>≡</div><h2>Rapports PDF et Word</h2><p>Les rapports se génèrent depuis la synthèse d’un constat (étape 4). Les exports conservent uniquement les rubriques cochées. L’historique des rapports envoyés sera disponible avec la synchronisation serveur.</p></div></section>
+      <section class="page" id="constats"><div class="simple-head"><div><p class="eyebrow">REPRENDRE UNE VISITE</p><h1>Mes brouillons</h1><p>Vos constats enregistrés sur cet appareil. Rouvrez-les pour les corriger ou ajouter des photos.</p></div><div class="dossier-head-actions"><button id="restore-visit" class="secondary" title="Fichier .json créé par « Copie de secours de ce constat »">Importer une copie de secours</button><input id="backup-input" type="file" accept="application/json,.json" hidden></div></div><p id="cloud-status" class="sync-status" role="status" hidden></p><div id="draft-list" class="draft-list"></div><div id="cloud-list" class="draft-list"></div></section>
+      <section class="page" id="rapports"><div class="simple-head"><div><p class="eyebrow">DOCUMENTS</p><h1>Rapports</h1><p>Rapports HTML, Word et PDF de vos constats : dernier fichier enregistré et accès direct à la synthèse pour les produire.</p></div></div><div id="report-list" class="draft-list"></div></section>
 
       <section class="page inspection-page" id="inspection">
         <div class="inspection-head"><button class="back-btn">←</button><div><p class="eyebrow">NOUVEAU CONSTAT</p><h1>Constat de terrain</h1></div><button class="secondary" id="save-draft">Enregistrer le brouillon</button><span class="save-state" role="status" aria-live="polite">Brouillon local prêt</span></div>
@@ -92,10 +85,10 @@
           <label class="check-label wide ej-only"><input type="checkbox" id="hide-nominatif"> Masquer le bloc nominatif (sortie initiale) — il reste présent, vide, dans le fichier</label></div>
           <p class="muted">Rapport HTML autonome (logo et photos intégrés, aucune ressource externe). Nom du fichier : <b id="cdl-report-filename"></b>. Seules les rubriques cochées ci-dessus sont reprises.</p></section>
         <div class="form-actions"><button class="secondary prev-step">← Modifier</button><div class="export-buttons"><button class="primary" id="export-html">Rapport HTML (modèle CDL)</button><button class="primary" id="export-pv-word" hidden>PV Word (.docx)</button><button class="primary" id="generate-report">Télécharger Word (.docx)</button><button class="secondary" id="export-pdf">Exporter en PDF</button><button class="secondary" id="export-clean-pdf">PDF sans commentaires (photos seules)</button></div></div><p>Le PDF est téléchargé directement. « Photos seules » exclut les descriptions, commentaires, transcriptions, notes et suites à donner.</p><section class="close-visit"><h3>Terminer ce constat</h3><p>Une fois les rapports exportés et rangés (OneDrive…), terminez le constat : il quitte le « constat actuel », passe dans « Mes brouillons › Constats terminés » et sa fiche est mise à jour dans Airtable.</p><p class="muted" id="close-status" role="status"></p><button type="button" class="primary" id="close-visit">✓ Terminer ce constat</button></section><section class="email-report"><h3>Envoyer le rapport</h3><label>Adresse e-mail du destinataire<input type="email" id="mail-recipient" placeholder="destinataire@exemple.fr"></label><button class="secondary" id="prepare-email">Préparer l’e-mail</button><p>Les boutons d’export ouvrent directement l’enregistrement : explorateur sur ordinateur, menu « Enregistrer dans Fichiers » (OneDrive) ou messagerie sur iPad et téléphone. Ce bouton-ci ouvre seulement un message préparé, sans pièce jointe.</p></section></div>
+        <section class="backup-tools"><button id="backup-visit" class="secondary">💾 Copie de secours de ce constat (fichier)</button><small>Fichier .json avec photos, notes et sons de ce constat, à garder hors de l’application si besoin. Le constat est déjà sauvegardé automatiquement sur le serveur ; « Importer une copie de secours » se trouve dans « Mes brouillons ».</small></section>
       </section>
     </main>
   </div>
-  <section class="backup-tools"><button id="backup-visit" class="secondary">Sauvegarder la visite dans un fichier</button><button id="restore-visit" class="secondary">Ouvrir une sauvegarde</button><input id="backup-input" type="file" accept="application/json,.json" hidden><small>Conservez une copie avec les photos, les notes et les audios.</small></section>
   <div class="share-bar" id="share-bar" role="status" hidden><p id="share-text"></p><div><button type="button" class="primary" id="share-file">Enregistrer… (Fichiers, OneDrive, e-mail)</button><button type="button" class="secondary" id="share-download">Télécharger</button><button type="button" class="secondary" id="share-close" aria-label="Fermer">×</button></div></div>
   <div class="toast" role="status">✓ Rapport prêt à être enregistré en PDF</div>
   <dialog id="dossier-dialog"><form id="dossier-form" method="dialog"><div class="dialog-head"><b id="dossier-dialog-title">Nouveau dossier</b><button type="button" id="close-dossier" aria-label="Fermer">×</button></div>

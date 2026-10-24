@@ -61,3 +61,7 @@ dialog{max-height:calc(100dvh - 24px);max-width:calc(100vw - 16px);overflow:auto
 .cloud-actions{display:flex;flex-wrap:wrap;gap:8px;margin-top:6px}.draft-card.cloud{border-style:dashed}
 .cloud-closed{margin-top:20px}.cloud-closed summary{cursor:pointer;font-weight:600;padding:8px 0}
 .delete-audio{margin-top:6px;display:block}
+/* Accueil : deux indicateurs, dossiers récents sur toute la largeur, constat en cours en tête */
+.stats-grid{grid-template-columns:repeat(2,1fr)}.dashboard-grid{grid-template-columns:1fr}#dashboard .continue-card{margin:0 0 18px}
+#inspection .backup-tools{margin:26px 0 10px}
+@media(max-width:760px){.stats-grid{grid-template-columns:1fr}}

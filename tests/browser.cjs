@@ -85,7 +85,7 @@ async function noSavePicker(browser,options){const context=await browser.newCont
     await page.locator('[data-edit="comment"]').first().fill('COMMENTAIRE_CONFIDENTIEL');
     await page.locator('#save-draft').click();await page.waitForFunction(()=>!unsaved);
     await page.locator('.new-inspection').first().click();await page.locator('[data-view="constats"]').click();
-    await page.locator('.draft-card').filter({hasText:'Essai stabilisation'}).getByRole('button').click();
+    await page.locator('.draft-card').filter({hasText:'Essai stabilisation'}).locator('[data-open-draft]').click();
     await page.waitForFunction(()=>state.photos.length===3);
     assert.equal(await page.locator('#case-name').inputValue(),'Essai stabilisation');
     assert.ok(await page.evaluate(()=>state.photos[0].audio));

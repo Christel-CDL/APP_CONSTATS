@@ -13,7 +13,7 @@ function dataUrlParts(src){const comma=src.indexOf(','),head=src.slice(5,comma),
 function dataUrlBlob(src){const {type,bytes}=dataUrlParts(src);return new Blob([bytes],{type});}
 function frenchDate(value){return /^\d{4}-\d{2}-\d{2}$/.test(value||'')?value.split('-').reverse().join('/'):'';}
 
-const CLOUD=DOSSIER_REMOTE,CLOUD_KEY='constat-cloud'+PROFILE.suffix,CLOUD_DIRTY_KEY=CLOUD_KEY+'-a-envoyer';
+const CLOUD=DOSSIER_REMOTE,CLOUD_KEY='constat-cloud'+PROFILE.suffix,CLOUD_DIRTY_KEY=CLOUD_KEY+'-a-envoyer',CLOUD_DELETE_KEY=CLOUD_KEY+'-a-supprimer';
 const readMap=key=>{try{const v=JSON.parse(localStorage.getItem(key)||'{}');return v&&typeof v==='object'?v:{};}catch{return {};}};
 const writeMap=(key,value)=>{try{localStorage.setItem(key,JSON.stringify(value));}catch{}};
 const cloudMeta=()=>readMap(CLOUD_KEY);
@@ -21,7 +21,8 @@ function setCloudMeta(id,patch){const all=cloudMeta();all[id]={...all[id],...pat
 const dirtyIds=()=>readMap(CLOUD_DIRTY_KEY);
 function markDirty(id){const all=dirtyIds();all[id]=Date.now();writeMap(CLOUD_DIRTY_KEY,all);}
 function clearDirty(id,stamp){const all=dirtyIds();if(stamp===undefined||all[id]===stamp){delete all[id];writeMap(CLOUD_DIRTY_KEY,all);}}
-const cloud={running:false,timer:null,error:'',remote:null,remoteAt:0};
+const deletions=()=>readMap(CLOUD_DELETE_KEY);
+const cloud={running:false,timer:null,error:'',remote:null,remoteAt:0,deleted:[]};
 async function cloudFetch(path,options={}){const res=await fetch(path+(path.includes('?')?'&':'?')+'profil='+encodeURIComponent(PROFILE.id),{credentials:'same-origin',cache:'no-store',...options});
   if(res.status===401)throw Object.assign(new Error('Session expirée : reconnectez ce profil depuis l’écran de lancement.'),{status:401});return res;}
 const hashCache=new Map();
@@ -67,7 +68,10 @@ async function flushCloud(){if(!CLOUD||cloud.running||!ready)return;clearTimeout
   if(!navigator.onLine){cloud.error='';renderCloudStatus();return;}
   cloud.running=true;cloud.error='';
   let changed=false;
-  try{for(const id of Object.keys(dirtyIds())){if(cloudMeta()[id]?.conflict)continue;const result=await pushDraft(id);changed||=result==='ok'||result==='conflict';}}
+  try{// Suppressions faites sur cet appareil (éventuellement hors réseau) : transmises au serveur, qui les répercute sur les autres appareils.
+    for(const id of Object.keys(deletions())){const res=await cloudFetch('/api/constats/'+encodeURIComponent(id),{method:'DELETE'});if(!res.ok&&res.status!==404)throw new Error('Suppression sur le serveur impossible');
+      const all=deletions();delete all[id];writeMap(CLOUD_DELETE_KEY,all);cloud.remote=null;}
+    for(const id of Object.keys(dirtyIds())){if(cloudMeta()[id]?.conflict)continue;const result=await pushDraft(id);changed||=result==='ok'||result==='conflict';}}
   catch(error){cloud.error=error.message||'Sauvegarde serveur impossible';scheduleCloud(60000);}
   finally{cloud.running=false;renderCloudStatus();if(changed)renderDrafts();}}
 function scheduleCloud(delay=15000){if(!CLOUD)return;clearTimeout(cloud.timer);cloud.timer=setTimeout(flushCloud,delay);}
@@ -78,7 +82,7 @@ if(CLOUD){const basePersist=persistVisit;persistVisit=function(){const id=state.
   if(!PROFILE.pending)setTimeout(startupCloud,2500);}
 async function remoteConstats(maxAge=60000){if(!CLOUD||!navigator.onLine)return null;
   if(cloud.remote&&Date.now()-cloud.remoteAt<maxAge)return cloud.remote;
-  try{const res=await cloudFetch('/api/constats');if(!res.ok)return null;cloud.remote=(await res.json()).constats;cloud.remoteAt=Date.now();return cloud.remote;}catch{return null;}}
+  try{const res=await cloudFetch('/api/constats');if(!res.ok)return null;const body=await res.json();cloud.remote=body.constats;cloud.deleted=Array.isArray(body.supprimes)?body.supprimes:[];cloud.remoteAt=Date.now();return cloud.remote;}catch{return null;}}
 async function writeDraftRecord(value){const db=await database;if(!db){localStorage.setItem(STORAGE_KEY+'-draft-'+value.draftId,JSON.stringify(value));return;}
   return new Promise((resolve,reject)=>{const tx=db.transaction('drafts','readwrite');tx.objectStore('drafts').put(value,value.draftId);tx.oncomplete=resolve;tx.onerror=()=>reject(tx.error);});}
 // Récupère la version du serveur sur cet appareil (sans la renvoyer ensuite).
@@ -96,6 +100,8 @@ async function startupCloud(){if(!ready){setTimeout(startupCloud,1000);return;}
   // Constat marqué « à envoyer » sans modification réelle (simple réouverture) : rien à envoyer.
   for(const id of Object.keys(dirtyIds())){const d=local.find(x=>x.draftId===id);if(d&&meta[id]?.fingerprint&&!meta[id].conflict&&(await cloudVersionOf(d)).fingerprint===meta[id].fingerprint)clearDirty(id);}
   const remote=await remoteConstats(0);if(remote){const dirty=dirtyIds();
+    // Supprimés depuis un autre appareil : retirés ici aussi, sauf modification locale non envoyée (elle recrée le constat).
+    for(const id of cloud.deleted)if(local.some(d=>d.draftId===id)&&!dirty[id]){try{await removeLocalDraft(id);}catch(error){console.warn(error);}}
     for(const r of remote){const mine=local.find(d=>d.draftId===r.draftId);if(mine&&!dirty[r.draftId]&&r.version>(meta[r.draftId]?.version||0)){try{await pullDraft(r.draftId);}catch(error){console.warn(error);}}}}
   await flushCloud();renderDrafts();}
 function cloudBadge(d){if(!CLOUD||emptyDraft(d))return '';const meta=cloudMeta()[d.draftId]||{},remote=cloud.remote?.find(r=>r.draftId===d.draftId);
@@ -135,13 +141,18 @@ $('#close-visit').addEventListener('click',async()=>{
 });
 async function deleteDraft(draftId){const db=await database;if(!db){localStorage.removeItem(STORAGE_KEY+'-draft-'+draftId);return;}
   return new Promise((resolve,reject)=>{const tx=db.transaction('drafts','readwrite');tx.objectStore('drafts').delete(draftId);tx.oncomplete=resolve;tx.onerror=()=>reject(tx.error);});}
-// Suppression d'un constat terminé de l'appareil : il reste sauvegardé sur le serveur et dans Airtable.
+// Suppression d'un constat (en cours ou terminé) : effacé de cet appareil, puis du serveur, d'Airtable et des autres appareils.
+async function removeLocalDraft(id){await deleteDraft(id);clearDirty(id);const meta=cloudMeta();delete meta[id];writeMap(CLOUD_KEY,meta);
+  // Constat ouvert : un constat vierge le remplace (rien n'est réenregistré).
+  if(id===state.draftId){state.photos=[];state.caseName='';state.caseReference='';state.subjects=['Vue générale'];state.closedAt='';$('#action-list').innerHTML='';await startNewVisit();showPage('constats');}}
 $('#draft-list').addEventListener('click',async e=>{const button=e.target.closest('[data-delete-draft]');if(!button)return;const id=button.dataset.deleteDraft;
-  if(id===state.draftId){alert('Ce constat est ouvert : terminez-le ou ouvrez-en un autre avant de le supprimer.');return;}
+  if(visitBusy()){alert('Terminez l’opération en cours (photo, import, enregistrement) avant de supprimer un constat.');return;}
   const draft=(await listDrafts()).find(d=>d.draftId===id);if(!draft)return;
-  const saved=CLOUD&&cloudMeta()[id]?.version&&!dirtyIds()[id];
-  if(!confirm(saved?'Retirer ce constat de cet appareil ?\n\nIl reste sauvegardé sur le serveur (récupérable dans « Constats terminés sauvegardés »).':draft.lastExport?`Supprimer définitivement ce constat de l’appareil (photos, notes, feuille de présence) ?\n\nDernier fichier enregistré : ${draft.lastExport.name}. Vérifiez qu’il est bien rangé dans OneDrive avant de continuer.`:'Aucun rapport n’a été enregistré pour ce constat et il n’est pas sauvegardé sur le serveur : ses photos et notes seront PERDUES.\n\nSupprimer quand même ?'))return;
-  try{await deleteDraft(id);clearDirty(id);renderDrafts();}catch{alert('Suppression impossible. Réessayez.');}});
+  const where=CLOUD?'de tous vos appareils, du serveur et d’Airtable':'de cet appareil';
+  if(!confirm(`Supprimer définitivement ce constat ${where} ?\n\nPhotos, notes, sons et feuille de présence seront effacés.\n\n`+(draft.lastExport?`Dernier fichier enregistré : ${draft.lastExport.name}. Vérifiez qu’il est bien rangé dans OneDrive.`:'Aucun rapport n’a été enregistré pour ce constat : son contenu sera PERDU.')))return;
+  try{if(CLOUD){const all=deletions();all[id]=Date.now();writeMap(CLOUD_DELETE_KEY,all);}
+    await removeLocalDraft(id);renderDrafts();if(CLOUD)scheduleCloud(300);notify(CLOUD?'Constat supprimé ; il sera retiré de vos autres appareils à leur prochaine ouverture.':'Constat supprimé de cet appareil.');}
+  catch{alert('Suppression impossible. Réessayez.');}});
 
 // Feuille de présence photographiée (liste des présents signée sur papier).
 function renderAttendance(){const list=$('#attendance-list');if(!list)return;const ej=state.caseType==='ej',pages=state.attendance||[];
