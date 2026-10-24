@@ -130,4 +130,4 @@ Le prototype actuel comprend :
 - Table Projets d'Airtable : nouveau champ « Code Constats » ; la formule « Nom du projet » l'affiche lorsqu'il est rempli.
 - Import initial depuis le tableau du 22/10/2026 : 20 dossiers (18 en cours, 1 rapport déposé → Clos, 1 archivé), dont 3 existants mis à jour. Les 3 dossiers « À attribuer » sont ignorés tant que leur n° n'est pas connu.
 - Serveur : le nom saisi pour un dossier est écrit dans « Code Constats » (« Nom du projet » étant une formule, son écriture était refusée par Airtable) ; sans référence, le n° est déduit du code.
-- Reste à faire : mise à jour automatique à partir du tableau (n8n ou tâche planifiée).
+- Mise à jour automatique : réalisée le 24/10/2026 (lecture du tableau par le serveur, voir ACCES_ET_INSTALLATION.md).

@@ -24,6 +24,10 @@ services:
       SMTP_USER: ${SMTP_USER}
       SMTP_PASS: ${SMTP_PASS}
       MAIL_FROM: ${MAIL_FROM}                  # ex. "Constats CDL EXPERT <connexion@expertform.fr>"
+      # Facultatif : lecture du tableau de suivi des expertises dans OneDrive (docs/ACCES_ET_INSTALLATION.md)
+      MS_TENANT_ID: ${MS_TENANT_ID:-}
+      MS_CLIENT_ID: ${MS_CLIENT_ID:-}
+      MS_CLIENT_SECRET: ${MS_CLIENT_SECRET:-}
     volumes:
       - constats-data:/data                    # constats et photos sauvegardés : NE PAS supprimer ce volume
     networks:

@@ -22,6 +22,7 @@ node tests/auth.cjs
 node tests/offline-auth.cjs
 node tests/cloture.cjs
 node tests/dictation-ios.cjs
+node tests/tableau.cjs
 node tests/sync.cjs
 ```
 
@@ -32,6 +33,8 @@ node tests/sync.cjs
 Les tests couvrent le parcours complet, la reprise, les inclusions DOCX, les fichiers PDF, les rapports longs, le mode hors connexion et plusieurs protections contre les pertes de données. Le contrôle visuel Word et les permissions matérielles sur Safari iPad/Chrome Android restent manuels.
 
 `dictation-ios.cjs` simule l'iPad lancé depuis l'icône de l'écran d'accueil, où la reconnaissance vocale de WebKit ne fonctionne pas : « Dicter » ouvre le grand champ pour la touche micro du clavier. Un refus de la reconnaissance sur un autre navigateur y bascule aussi.
+
+`tableau.cjs` démarre le serveur de production avec un faux service Microsoft (connexion OneDrive, Graph) et le tableau fictif `tests/fixtures/tableau-suivi.xlsx` : connexion à usage unique, import du code, du n° et du statut seulement, bouton « Rechercher dans le tableau de suivi », pas de relecture d'un fichier inchangé, accès révoqué.
 
 `pv.cjs` enchaîne un PV de réception puis un PV de levée des réserves sur des données fictives.
 

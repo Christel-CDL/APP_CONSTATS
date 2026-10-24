@@ -36,6 +36,8 @@
 | `AIRTABLE_BASE_ID` | Identifiant de la base CONSTATS (`app…`) |
 | `SMTP_HOST`, `SMTP_PORT`, `SMTP_SECURE`, `SMTP_USER`, `SMTP_PASS` | Serveur d'envoi des codes (port 587 + `SMTP_SECURE=false`, ou 465 + `true`) |
 | `MAIL_FROM` | Expéditeur, ex. `Constats CDL EXPERT <connexion@expertform.fr>` |
+| `MS_TENANT_ID`, `MS_CLIENT_ID`, `MS_CLIENT_SECRET` | Facultatif : lecture du tableau de suivi des expertises dans OneDrive (voir plus bas). Sans elles, l'application fonctionne sans cette lecture. |
+| `TABLEAU_SUIVI_CHEMIN` | Facultatif : chemin du tableau dans OneDrive, par défaut `EXPERT JUDICIAIRE/DOSSIERS/Dossiers en cours/Tableau_suivi_expertises.xlsx` (feuille `Suivi expertises`, modifiable par `TABLEAU_SUIVI_FEUILLE`) |
 
 Les secrets ne sont jamais écrits dans le dépôt ni dans le fichier compose.
 
@@ -63,6 +65,37 @@ pas être supprimée), mais elle ne donne accès à rien sans compte autorisé.
 - Expertise judiciaire : le champ `Client / Juridiction` n'est jamais lu, transmis ni écrit par le serveur.
 - Supprimer un dossier dans l'application le retire de l'appareil seulement ; il reste dans Airtable.
 - Le jeton Airtable doit avoir `data.records:read` et `data.records:write` sur la base CONSTATS.
+
+## Tableau de suivi des expertises judiciaires (OneDrive → dossiers)
+
+Le tableau Excel reste la référence. Sa colonne « Code Constats » (`EJ24-358_NOM`) devient le nom du dossier
+(champ `Code Constats` de la table Projets) ; le n° (`EJ24-358`) devient la `Référence` ; le statut est repris
+(« Rapport déposé » → `Clos`). Les lignes sans code complet (« À attribuer ») sont ignorées. Rien d'autre n'est
+lu dans le tableau : ni parties, ni juridiction, ni n° RG, ni observations.
+
+- **Quand ?** À chaque ouverture du profil judiciaire (au plus une fois toutes les 2 minutes, et sans relecture
+  si le fichier n'a pas changé), et sur demande avec « 🔎 Rechercher dans le tableau de suivi » (étape 1 d'un
+  constat et « Mes dossiers »). Un dossier n'est jamais supprimé par cette lecture.
+- **Accès à OneDrive.** Le serveur lit le fichier avec le compte Microsoft de l'expert, par Microsoft Graph,
+  avec le seul droit délégué `Files.Read` (lecture des fichiers de ce compte ; aucun droit d'écriture). La
+  première fois, l'application affiche « Connecter OneDrive » : se connecter au compte CDL EXPERTISES et
+  accepter. Le jeton de renouvellement est chiffré sur le serveur (volume `/data`) ; s'il est révoqué ou expiré
+  (90 jours sans utilisation), le lien « Connecter OneDrive » réapparaît.
+
+### Mise en place (une fois, compte administrateur Microsoft 365)
+
+1. Centre d'administration Microsoft Entra → **Applications** → **Inscriptions d'applications** → **Nouvelle inscription**.
+   Nom : `Constats CDL EXPERT` ; types de comptes : **comptes de cet annuaire d'organisation uniquement** ;
+   URI de redirection : plateforme **Web**, `https://app.expertform.fr/api/microsoft/retour` (adresse de `APP_URL`
+   suivie de `/api/microsoft/retour`).
+2. Page **Vue d'ensemble** : copier l'**ID d'application (client)** → `MS_CLIENT_ID` et l'**ID de l'annuaire
+   (locataire)** → `MS_TENANT_ID`.
+3. **Certificats et secrets** → **Nouveau secret client** (24 mois au plus) : copier la **valeur** → `MS_CLIENT_SECRET`.
+   Noter la date d'expiration : le secret est à renouveler avant cette date.
+4. **Autorisations d'API** → **Microsoft Graph** → **Autorisations déléguées** : `Files.Read` et `offline_access`
+   (`User.Read` est présent par défaut).
+5. hPanel → projet `app-constats` : renseigner les trois variables, puis **Déployer**.
+6. Dans l'application, profil judiciaire : « Connecter OneDrive », puis « 🔎 Rechercher dans le tableau de suivi ».
 
 ## Sauvegarde des constats et passage d'un appareil à l'autre
 
