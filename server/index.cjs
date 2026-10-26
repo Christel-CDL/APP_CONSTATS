@@ -286,7 +286,7 @@ async function deleteVisit(user,draftId){if(!DRAFT_ID.test(draftId))throw Object
   return {ok:true};}
 // ── Rangement dans OneDrive à la clôture du constat ─────────────────────────────────────────
 // L'appareil envoie le rapport HTML produit à la clôture ; le serveur le dépose avec les photos (et annotations, notes
-// manuscrites, sons) dans « <dossier OneDrive de la mission>/CONSTATS/AAAA-MM-JJ/ ». Le dossier de la mission est le lien
+// manuscrites, sons) dans « <dossier OneDrive de la mission>/CONSTATS/AAAA-MM-JJ/ » (ou un sous-dossier « Constats » existant, ex. « 10_Constats »). Le dossier de la mission est le lien
 // « Dossier OneDrive » de la ligne du tableau de suivi (référence du constat).
 const FILE_EXT={'image/jpeg':'jpg','image/png':'png','image/webp':'webp','image/gif':'gif','image/bmp':'bmp','image/avif':'avif','audio/mp4':'m4a','audio/mpeg':'mp3','audio/ogg':'ogg','audio/webm':'webm','audio/wav':'wav','video/webm':'webm'};
 const slug=v=>String(v||'').normalize('NFD').replace(/[̀-ͯ]/g,'').replace(/[^\w-]+/g,'-').replace(/^-+|-+$/g,'').slice(0,40);
@@ -298,29 +298,40 @@ async function graphUpload(token,file,data,type){const url=graph.api+`/me/drive/
   for(let i=0;i<data.length;i+=size){const part=data.subarray(i,i+size),res=await fetch(uploadUrl,{method:'PUT',signal:AbortSignal.timeout(120000),headers:{'Content-Range':`bytes ${i}-${i+part.length-1}/${data.length}`},body:part});if(!res.ok)throw fail(res);}}
 // Dossier de la mission : lien de la ligne du tableau ; à défaut, recherche dans le dossier du tableau et ses sous-dossiers
 // (ex. dossiers rangés par tribunal) d'un dossier dont le nom contient le n° de l'expertise (« …MI24-358… ») ou le nom
-// court du code (« MATHIAS » pour EJ24-358_MATHIAS → « MATHIAS-OLIVIER TERRASS »). Retourne {path, how}.
+// court du code (« MATHIAS » pour EJ24-358_MATHIAS → « MATHIAS-OLIVIER TERRASS » ; « PENA-METAUX » → « PENA Métaux »).
+// Dossier absent des tableaux (ligne sans statut « En cours », dossier créé dans l'application) : même recherche dans le
+// dossier du tableau de son préfixe (CS → DEV-CONSULT), d'après le nom du dossier. Retourne {path, how}.
 const normName=v=>String(v||'').normalize('NFD').replace(/[\u0300-\u036f]/g,'').toUpperCase().replace(/[^A-Z0-9]+/g,' ').trim();
-async function missionFolder(user,visit,token){const ref=String(visit.caseReference||visit.dossier?.reference||'').trim().toUpperCase();if(!ref)return {path:'',how:'sans référence'};
-  const store=readDossierStore(user.id);for(const [key,t] of Object.entries(store.tableaux)){const row=(t.rows||[]).find(r=>r.reference===ref);if(!row)continue;if(row.onedrive)return {path:row.onedrive,how:'lien du tableau'};
-    const dir=path.posix.dirname(TABLEAUX[key]?.file||'');if(dir==='/')return {path:'',how:'pas de lien'};
-    const number=ref.replace(/^[A-Z]+/,''),byNumber=new RegExp(`(^|[^0-9])${number.replace(/[^0-9]+/g,'[^0-9]?')}([^0-9]|$)`),suffix=normName(String(row.code||'').split('_').slice(1).join(' '));
-    const byName=name=>suffix&&(` ${normName(name)} `).includes(` ${suffix} `)||suffix.split(' ')[0].length>=4&&normName(name).split(' ').includes(suffix.split(' ')[0]);
-    const children=async p=>((await graphGet(token,`/me/drive/root:${drivePath(p)}:/children?$select=name,folder&$top=999`).catch(()=>({value:[]}))).value||[]).filter(i=>i.folder).map(i=>({name:i.name,path:`${p}/${i.name}`}));
-    const level1=await children(dir),level2=[];for(const f of level1)if(!byNumber.test(f.name))level2.push(...await children(f.path));
-    // N° : premier dossier qui le porte. Nom : correspondance unique, de préférence au niveau des dossiers d'expertise (sous les
-    // dossiers par tribunal), jamais un dossier qui contient lui-même d'autres dossiers d'expertise correspondants.
-    const unique=list=>{const named=list.filter(f=>byName(f.name));return named.length===1?named[0]:null;};
-    const found=[...level1,...level2].find(f=>byNumber.test(f.name))||unique(level2)||(level2.some(f=>byName(f.name))?null:unique(level1.filter(f=>!level2.some(c=>c.path.startsWith(f.path+'/')))));
-    return found?{path:found.path.slice(1),how:'recherche par '+(byNumber.test(found.name)?'n°':'nom')}:{path:'',how:'introuvable'};}
+const graphFolders=async(token,p)=>((await graphGet(token,`/me/drive/root:${drivePath(cleanPath(p))}:/children?$select=name,folder&$top=999`).catch(()=>({value:[]}))).value||[]).filter(i=>i.folder).map(i=>({name:i.name,path:`${cleanPath(p)}/${i.name}`}));
+async function searchMissionFolder(token,key,ref,code){const dir=path.posix.dirname(TABLEAUX[key]?.file||'');if(dir==='/')return null;
+  const number=ref.replace(/^[A-Z]+/,''),byNumber=number?new RegExp(`(^|[^0-9])${number.replace(/[^0-9]+/g,'[^0-9]?')}([^0-9]|$)`):/(?!)/;
+  const suffix=normName(/^[A-Z]{2}\d[\w-]*_/i.test(code)?String(code).replace(/^[^_]*_/,''):code),first=suffix.split(' ')[0];
+  const exact=name=>!!suffix&&(` ${normName(name)} `).includes(` ${suffix} `),starts=name=>!!suffix&&(normName(name)+' ').startsWith(suffix+' ');
+  const byName=name=>exact(name)||first.length>=4&&normName(name).split(' ').includes(first);
+  const level1=await graphFolders(token,dir),level2=[];for(const f of level1)if(!byNumber.test(f.name))level2.push(...await graphFolders(token,f.path));
+  // N° : premier dossier qui le porte. Nom : dossier du client nommé d'après le code (« PENA Métaux », pas « PENA ENVIRONNEMENT »),
+  // puis correspondance unique, de préférence au niveau des dossiers d'expertise (sous les dossiers par tribunal), jamais un
+  // dossier qui contient lui-même d'autres dossiers d'expertise correspondants.
+  const unique=(list,test)=>{const named=list.filter(f=>test(f.name));return named.length===1?named[0]:null;};
+  const found=[...level1,...level2].find(f=>byNumber.test(f.name))||unique(level1,starts)||unique(level2,exact)||unique(level2,byName)||(level2.some(f=>byName(f.name))?null:unique(level1.filter(f=>!level2.some(c=>c.path.startsWith(f.path+'/'))),byName));
+  return found?{path:found.path.slice(1),how:'recherche par '+(byNumber.test(found.name)?'n°':'nom')}:null;}
+async function missionFolder(user,visit,token){const ref=String(visit.caseReference||visit.dossier?.reference||'').trim().toUpperCase(),name=String(visit.caseName||visit.dossier?.name||'').trim();
+  const store=readDossierStore(user.id);for(const [key,t] of Object.entries(store.tableaux)){const row=(t.rows||[]).find(r=>r.reference===ref);if(!ref||!row)continue;if(row.onedrive)return {path:row.onedrive,how:'lien du tableau'};
+    return await searchMissionFolder(token,key,ref,row.code)||{path:'',how:'introuvable'};}
+  if(!ref&&!name)return {path:'',how:'sans référence'};
+  const keys=(ROLE_TABLEAUX[user.role]||[]).filter(k=>!ref||ref.startsWith(TABLEAUX[k].prefix));
+  for(const key of keys){const found=await searchMissionFolder(token,key,ref,name);if(found)return {...found,how:found.how+', hors tableau'};}
   return {path:'',how:'dossier absent des tableaux'};}
+// Sous-dossier des constats : dossier existant nommé « Constats », éventuellement numéroté (« 10_Constats ») ; sinon « CONSTATS ».
+async function constatsFolder(token,base){return (await graphFolders(token,base)).find(f=>/^(\d+ )?CONSTATS( |$)/.test(normName(f.name)))?.name||'CONSTATS';}
 async function depositVisit(user,draftId,body){const record=readConstat(user.id,draftId);if(!record)throw Object.assign(new Error('absent'),{status:404});
   const v=record.visit;if(!v.closedAt)throw Object.assign(new Error('Constat non terminé.'),{status:409});
   const token=await msAccessToken(user.id);if(!token)throw Object.assign(new Error('Connectez OneDrive (droit d’écriture) pour ranger les constats terminés.'),{status:428});
   const found=await missionFolder(user,v,token),base=found.path;console.log(`Rangement OneDrive ${draftId.slice(0,8)} (${String(v.caseReference||'').slice(0,20)}) : dossier ${base?'trouvé ('+found.how+')':'non trouvé ('+found.how+')'}`);
-  if(!base)throw Object.assign(new Error('Pas de dossier OneDrive trouvé pour ce constat : vérifiez sa référence et le lien « Ouvrir » (Dossier OneDrive) de sa ligne dans le tableau de suivi'),{status:422});
+  if(!base)throw Object.assign(new Error('Pas de dossier OneDrive trouvé pour ce constat : vérifiez sa référence et, dans le tableau de suivi, le statut « En cours » et le lien « Ouvrir » (Dossier OneDrive) de sa ligne'),{status:422});
   // Un dossier par jour de visite ; un second constat du même jour va dans « AAAA-MM-JJ (2) ».
   const day=/^\d{4}-\d{2}-\d{2}$/.test(v.visitDate||'')?v.visitDate:String(v.closedAt).slice(0,10),used=new Set(listVisits(user.id).filter(c=>c.draftId!==draftId).map(c=>readConstat(user.id,c.draftId)?.onedrive?.folder).filter(Boolean));
-  let folder=`${base}/CONSTATS/${day}`;for(let n=2;used.has(folder);n++)folder=`${base}/CONSTATS/${day} (${n})`;
+  const sub=await constatsFolder(token,base);let folder=`${base}/${sub}/${day}`;for(let n=2;used.has(folder);n++)folder=`${base}/${sub}/${day} (${n})`;
   const files=[],name=String(body.name||'').split(/[\\/]/).pop().replace(/[^\w.() -]+/g,'_').slice(0,120);
   if(typeof body.html==='string'&&body.html.length&&/\.html?$/i.test(name))files.push({path:`${folder}/${name}`,data:Buffer.from(body.html,'utf8'),type:'text/html'});
   for(const p of v.photos||[])for(const [field,suffix] of [['src',''],['annotatedSrc','_annotee'],['drawing','_note-manuscrite'],['audio','_son']]){const m=/^fichier:([a-f0-9]{64})$/.exec(p[field]||'');if(!m)continue;
