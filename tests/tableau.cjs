@@ -9,7 +9,9 @@ const FILES={'/EXPERT%20JUDICIAIRE/DOSSIERS/Dossiers%20en%20cours/Tableau_suivi_
   '/EXPERTISES/Expertises%202026/Tableau_suivi_expertises_privees.xlsx':fixture('tableau-ep.xlsx'),'/DEV-CONSULT/Tableau_suivi_missions_conseil.xlsx':fixture('tableau-cs.xlsx')};
 (async()=>{
   // Faux Microsoft : jetons OAuth (un jeu par compte) et Graph (métadonnées et contenu des fichiers).
-  const ms={tokens:[],downloads:0,etag:'"v1"',access:new Set(),refresh:new Set(),uploads:[],children:[{name:'Tableau_suivi_expertises.xlsx',file:{}},{name:'AUTRE_MI26-01000_01-01-2026',folder:{}},{name:'NOUVEAU_TJ_MI26-0100_01-01-2026',folder:{}},{name:'TJ TEST',folder:{}}],court:[{name:'AUTRE-PARTIE',folder:{}}]};
+  const ms={tokens:[],downloads:0,etag:'"v1"',access:new Set(),refresh:new Set(),uploads:[],children:[{name:'Tableau_suivi_expertises.xlsx',file:{}},{name:'AUTRE_MI26-01000_01-01-2026',folder:{}},{name:'NOUVEAU_TJ_MI26-0100_01-01-2026',folder:{}},{name:'TJ TEST',folder:{}}],court:[{name:'AUTRE-PARTIE',folder:{}}],
+    // Dossiers des missions de conseil : un dossier par client, sous-dossiers numérotés (dont « 10_Constats »)
+    tree:{'/DEV-CONSULT':[{name:'PENA ENVIRONNEMENT',folder:{}},{name:'PENA Métaux',folder:{}},{name:'Tableau_suivi_missions_conseil.xlsx',file:{}}],'/DEV-CONSULT/PENA Métaux':[{name:'00_Administratif_Mission',folder:{}},{name:'10_Constats',folder:{}}]}};
   const fake=http.createServer((req,res)=>{let body='';req.on('data',c=>body+=c);req.on('end',()=>{const json=(status,data)=>{res.writeHead(status,{'Content-Type':'application/json'});res.end(JSON.stringify(data));};
     if(req.url.endsWith('/oauth2/v2.0/token')){const p=new URLSearchParams(body);ms.tokens.push(Object.fromEntries(p));
       if(p.get('grant_type')==='authorization_code'&&p.get('code')!=='CODE-OK')return json(400,{error:'invalid_grant'});
@@ -19,6 +21,7 @@ const FILES={'/EXPERT%20JUDICIAIRE/DOSSIERS/Dossiers%20en%20cours/Tableau_suivi_
     if(req.method==='PUT'){const u=/^\/v1\.0\/me\/drive\/root:(.+):\/content$/.exec(req.url);ms.uploads.push({path:decodeURIComponent(u[1]),size:Buffer.byteLength(body),type:req.headers['content-type'],body});return json(201,{id:'x'});}
     if(req.url.startsWith('/v1.0/me/drive/root:/EXPERT%20JUDICIAIRE/DOSSIERS/Dossiers%20en%20cours:/children'))return json(200,{value:ms.children});
     if(req.url.startsWith('/v1.0/me/drive/root:/EXPERT%20JUDICIAIRE/DOSSIERS/Dossiers%20en%20cours/TJ%20TEST:/children'))return json(200,{value:ms.court});
+    const tree=/^\/v1\.0\/me\/drive\/root:(.+?):\/children/.exec(req.url);if(tree&&ms.tree[decodeURIComponent(tree[1])])return json(200,{value:ms.tree[decodeURIComponent(tree[1])]});
     if(req.url.includes(':/children'))return json(200,{value:[]});
     const m=/^\/v1\.0\/me\/drive\/root:(.+?)(:\/content)?$/.exec(req.url),file=m&&FILES[m[1]];if(!file)return json(404,{error:'not found'});
     if(m[2]){ms.downloads++;res.writeHead(200,{'Content-Type':'application/octet-stream'});return res.end(file);}
@@ -140,6 +143,15 @@ const FILES={'/EXPERT%20JUDICIAIRE/DOSSIERS/Dossiers%20en%20cours/Tableau_suivi_
     assert.equal(await ep.locator(`#draft-list [data-open-draft="${draftId}"],#draft-list [data-delete-draft="${draftId}"]`).count(),0,'Constat rangé retiré de « Mes brouillons »');
     assert.match(await ep.locator('#dossier-list').innerText(),/rangé dans OneDrive[\s\S]*Rouvrir pour compléter/);
     assert.equal(await ep.locator(`#report-list [data-open-report="${draftId}"]`).count(),1);assert.match(await ep.locator('#report-list').innerText(),/Rangé dans OneDrive le/);
+    // Mission de conseil absente du tableau (statut vide) et créée dans l'application : dossier du client retrouvé par le nom du
+    // code dans DEV-CONSULT (« PENA Métaux » et non « PENA ENVIRONNEMENT »), constat rangé dans le sous-dossier « 10_Constats » existant
+    const pena=await ep.evaluate(async src=>{saveDossier({name:'CS26-016_PENA-METAUX',reference:'CS26-016',type:'Conseil / AMO',status:'En cours'});await startNewVisit(readDossiers().find(d=>d.name==='CS26-016_PENA-METAUX').id);addPhoto(src,'Vue générale',new Date().toISOString(),null,'import');saveVisit();return state.draftId;},png);
+    await ep.evaluate(()=>{state.currentStep=4;renderStep();});await ep.click('#close-visit');
+    for(let i=0;i<200&&!ms.uploads.some(u=>u.path.includes('PENA Métaux')&&u.path.endsWith('.png'));i++)await ep.waitForTimeout(100);
+    const penaDay=await ep.evaluate(id=>listDrafts().then(l=>l.find(d=>d.draftId===id).visitDate),pena);
+    assert.ok(ms.uploads.some(u=>u.path.startsWith(`/DEV-CONSULT/PENA Métaux/10_Constats/${penaDay}/`)&&u.path.endsWith('.html')),'Rapport rangé dans PENA Métaux/10_Constats');
+    assert.ok(!ms.uploads.some(u=>/PENA ENVIRONNEMENT|PENA Métaux\/CONSTATS/.test(u.path)),'Ni l’autre client, ni un second dossier CONSTATS');
+    assert.match(log,/Rangement OneDrive [0-9a-f]{8} \(CS26-016\) : dossier trouvé \(recherche par nom, hors tableau\)/);
     // ── Dossier passé « Terminé » dans le tableau : constat rangé effacé du serveur, puis de l'appareil ──
     FILES['/EXPERTISES/Expertises%202026/Tableau_suivi_expertises_privees.xlsx']=fixture('tableau-ep-termine.xlsx');ms.etag='"v2"';
     await ep.evaluate(()=>syncDossiers('force'));await ep.waitForFunction(()=>!dossierSync.running&&dossierSync.tableau?.etat==='ok'&&!readDossiers().some(d=>d.name==='EP26-001_ALPHA'));
