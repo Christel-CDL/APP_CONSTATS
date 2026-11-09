@@ -129,9 +129,12 @@ function cloudBadge(d){if(!CLOUD||emptyDraft(d))return '';const meta=cloudMeta()
   if(dirtyIds()[d.draftId])return `<p class="cloud-badge">⏳ Modifications en attente d’envoi au serveur</p>`;
   if(remote&&remote.version>(meta.version||0))return `<p class="cloud-badge">☁ Version plus récente sur un autre appareil</p><div class="cloud-actions"><button class="secondary" data-cloud-pull="${escapeHtml(d.draftId)}">Mettre à jour cet appareil</button></div>`;
   const stored=storedInOneDrive(d),ended=remote?.dossierTermine&&!stored;
-  return (deposits()[d.draftId]?'<p class="cloud-badge">⏳ À ranger dans OneDrive</p>':d.closedAt&&!stored&&d.depositError?`<p class="cloud-badge warn">⚠ Non rangé dans OneDrive : ${escapeHtml(d.depositError)}.</p><div class="cloud-actions"><button class="secondary" data-retry-deposit="${escapeHtml(d.draftId)}">Réessayer le rangement</button></div>`:d.closedAt&&!stored&&CLOUD?`<div class="cloud-actions"><button class="secondary" data-retry-deposit="${escapeHtml(d.draftId)}">Ranger dans OneDrive</button></div>`:stored?`<p class="cloud-badge ok">📁 Rangé dans OneDrive le ${escapeHtml(new Date(stored.at).toLocaleString('fr-FR'))}${stored.dossier?' : …/'+escapeHtml(stored.dossier):''}</p>`:'')
+  return (deposits()[d.draftId]?'<p class="cloud-badge">⏳ À ranger dans OneDrive</p>':d.closedAt&&!stored&&d.depositError?`<p class="cloud-badge warn">⚠ Non rangé dans OneDrive : ${escapeHtml(d.depositError)}.</p><div class="cloud-actions"><button class="secondary" data-retry-deposit="${escapeHtml(d.draftId)}">Réessayer le rangement</button></div>${attachForm(d)}`:d.closedAt&&!stored&&CLOUD?`<div class="cloud-actions"><button class="secondary" data-retry-deposit="${escapeHtml(d.draftId)}">Ranger dans OneDrive</button></div>`:stored?`<p class="cloud-badge ok">📁 Rangé dans OneDrive le ${escapeHtml(new Date(stored.at).toLocaleString('fr-FR'))}${stored.dossier?' : …/'+escapeHtml(stored.dossier):''}</p>`:'')
     +(ended?'<p class="cloud-badge warn">⚠ Dossier terminé dans le tableau de suivi : ce constat n’est pas rangé dans OneDrive. Rouvrez-le et terminez-le pour le ranger, ou supprimez-le.</p>':'')
     +(meta.version?'<p class="cloud-badge ok">☁ Sauvegardé sur le serveur</p>':'');}
+// Dossier OneDrive introuvable (ancien constat sans référence, nom libre) : rattachement du constat à un dossier, puis rangement.
+function attachForm(d){const list=readDossiers().filter(x=>x.reference).sort((a,b)=>a.name.localeCompare(b.name,'fr'));if(!list.length)return '';
+  return `<div class="cloud-actions attach-dossier"><select data-attach-select="${escapeHtml(d.draftId)}" aria-label="Dossier de rattachement"><option value="">— Choisir le dossier de ce constat —</option>${list.map(x=>`<option value="${escapeHtml(x.id)}"${x.id===d.dossierId?' selected':''}>${escapeHtml(x.name)}</option>`).join('')}</select><button class="secondary" data-attach-deposit="${escapeHtml(d.draftId)}">Rattacher et ranger</button></div>`;}
 async function renderCloudSection(local){const box=$('#cloud-list');if(!box)return;if(!CLOUD){box.innerHTML='';return;}
   const remote=await remoteConstats();if(!remote){box.innerHTML='';return;}
   const ids=new Set(local.map(d=>d.draftId)),others=remote.filter(r=>!ids.has(r.draftId)).sort((a,b)=>String(b.updatedAt).localeCompare(String(a.updatedAt)));
@@ -155,6 +158,17 @@ document.addEventListener('click',async e=>{const b=e.target.closest('[data-retr
   try{const draft=(await listDrafts()).find(d=>d.draftId===id);if(!draft)return;
     const {depositError,closureReport:old,...rest}=draft;await writeDraftRecord(rest);const all=deposits();all[id]=Date.now();writeMap(CLOUD_DEPOSIT_KEY,all);renderDrafts();
     // Envoi en cours : le rangement passera juste après (un envoi déjà lancé ne le traite pas).
+    if(cloud.running)cloud.again=true;else await flushCloud();}
+  finally{b.disabled=false;}});
+// Rattachement : le constat prend la référence du dossier choisi (son nom seulement s'il n'en avait pas), est renvoyé au
+// serveur, puis rangé dans le dossier OneDrive de cette référence.
+document.addEventListener('click',async e=>{const b=e.target.closest('[data-attach-deposit]');if(!b)return;const id=b.dataset.attachDeposit,dossier=dossierById(document.querySelector(`[data-attach-select="${CSS.escape(id)}"]`)?.value);
+  if(!dossier){alert('Choisissez le dossier de ce constat.');return;}
+  if(!confirm(`Rattacher ce constat au dossier « ${dossier.name} » (référence ${dossier.reference}) et le ranger dans son dossier OneDrive ?`))return;b.disabled=true;
+  try{const draft=(await listDrafts()).find(d=>d.draftId===id);if(!draft)return;const {depositError,closureReport:old,...rest}=draft;
+    await writeDraftRecord({...rest,dossierId:dossier.id,dossier,caseReference:dossier.reference,caseName:String(rest.caseName||'').trim()?rest.caseName:dossier.name});
+    if(id===state.draftId){state.dossierId=dossier.id;state.caseReference=dossier.reference;state.caseName||=dossier.name;}
+    markDirty(id);const all=deposits();all[id]=Date.now();writeMap(CLOUD_DEPOSIT_KEY,all);renderDrafts();
     if(cloud.running)cloud.again=true;else await flushCloud();}
   finally{b.disabled=false;}});
 // « Terminer ce constat » : il quitte le constat actuel et passe dans « Constats terminés ».

@@ -59,6 +59,7 @@ dialog{max-height:calc(100dvh - 24px);max-width:calc(100vw - 16px);overflow:auto
 /* Sauvegarde serveur */
 .cloud-badge{font-size:.85rem;color:#3d4b5e;margin:6px 0 0}.cloud-badge.ok{color:#2e6b3a}.cloud-badge.warn{color:#b3261e;font-weight:600}
 .cloud-actions{display:flex;flex-wrap:wrap;gap:8px;margin-top:6px}.draft-card.cloud{border-style:dashed}
+.attach-dossier select{flex:1 1 220px;min-width:0;max-width:100%}
 .cloud-closed{margin-top:20px}.cloud-closed summary{cursor:pointer;font-weight:600;padding:8px 0}
 .delete-audio{margin-top:6px;display:block}
 /* Accueil : deux indicateurs, dossiers récents sur toute la largeur, constat en cours en tête */

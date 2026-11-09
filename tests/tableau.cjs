@@ -21,6 +21,7 @@ const FILES={'/EXPERT%20JUDICIAIRE/DOSSIERS/Dossiers%20en%20cours/Tableau_suivi_
     if(req.method==='PUT'){const u=/^\/v1\.0\/me\/drive\/root:(.+):\/content$/.exec(req.url);ms.uploads.push({path:decodeURIComponent(u[1]),size:Buffer.byteLength(body),type:req.headers['content-type'],body});return json(201,{id:'x'});}
     if(req.url.startsWith('/v1.0/me/drive/root:/EXPERT%20JUDICIAIRE/DOSSIERS/Dossiers%20en%20cours:/children'))return json(200,{value:ms.children});
     if(req.url.startsWith('/v1.0/me/drive/root:/EXPERT%20JUDICIAIRE/DOSSIERS/Dossiers%20en%20cours/TJ%20TEST:/children'))return json(200,{value:ms.court});
+    if(ms.failList&&req.url.includes(':/children')&&decodeURIComponent(req.url).includes(ms.failList+':'))return json(503,{error:'unavailable'});
     const tree=/^\/v1\.0\/me\/drive\/root:(.+?):\/children/.exec(req.url);if(tree&&ms.tree[decodeURIComponent(tree[1])])return json(200,{value:ms.tree[decodeURIComponent(tree[1])]});
     if(req.url.includes(':/children'))return json(200,{value:[]});
     const m=/^\/v1\.0\/me\/drive\/root:(.+?)(:\/content)?$/.exec(req.url),file=m&&FILES[m[1]];if(!file)return json(404,{error:'not found'});
@@ -152,6 +153,31 @@ const FILES={'/EXPERT%20JUDICIAIRE/DOSSIERS/Dossiers%20en%20cours/Tableau_suivi_
     assert.ok(ms.uploads.some(u=>u.path.startsWith(`/DEV-CONSULT/PENA Métaux/10_Constats/${penaDay}/`)&&u.path.endsWith('.html')),'Rapport rangé dans PENA Métaux/10_Constats');
     assert.ok(!ms.uploads.some(u=>/PENA ENVIRONNEMENT|PENA Métaux\/CONSTATS/.test(u.path)),'Ni l’autre client, ni un second dossier CONSTATS');
     assert.match(log,/Rangement OneDrive [0-9a-f]{8} \(CS26-016\) : dossier trouvé \(recherche par nom, hors tableau\)/);
+    // Contenu du dossier client illisible (Graph indisponible) : aucun « CONSTATS » créé à côté de « 10_Constats », rangement
+    // laissé en attente puis repris
+    ms.failList='/DEV-CONSULT/PENA Métaux';
+    const retry=await ep.evaluate(async src=>{await startNewVisit(readDossiers().find(d=>d.name==='CS26-016_PENA-METAUX').id);addPhoto(src,'Vue générale',new Date().toISOString(),null,'import');saveVisit();return state.draftId;},png);
+    await ep.evaluate(()=>{state.currentStep=4;renderStep();});await ep.click('#close-visit');
+    for(let i=0;i<200&&!/Rangement OneDrive : Sous-dossier des constats : Graph 503/.test(log);i++)await ep.waitForTimeout(100);
+    assert.match(log,/Rangement OneDrive : Sous-dossier des constats : Graph 503/);
+    assert.ok(!ms.uploads.some(u=>/PENA Métaux\/CONSTATS/.test(u.path)),'Pas de dossier CONSTATS créé quand le contenu est illisible');
+    assert.ok(await ep.evaluate(id=>!!deposits()[id]&&!cloud.running,retry),'Rangement toujours en attente');
+    ms.failList='';await ep.evaluate(()=>flushCloud());
+    for(let i=0;i<200&&!ms.uploads.some(u=>u.path.startsWith(`/DEV-CONSULT/PENA Métaux/10_Constats/${penaDay} (2)/`));i++)await ep.waitForTimeout(100);
+    assert.ok(ms.uploads.some(u=>u.path.startsWith(`/DEV-CONSULT/PENA Métaux/10_Constats/${penaDay} (2)/`)&&u.path.endsWith('.html')),'Rangement repris dans 10_Constats (second constat du jour)');
+    // Ancien constat sans référence, nom libre : dossier introuvable, rattaché au dossier choisi (nom du constat conservé) puis rangé
+    const old=await ep.evaluate(async src=>{await startNewVisit();state.caseName='aire Angalby';addPhoto(src,'Vue générale',new Date().toISOString(),null,'import');saveVisit();return state.draftId;},png);
+    await ep.evaluate(()=>{state.currentStep=4;renderStep();});await ep.click('#close-visit');
+    let oldWhy='';for(let i=0;i<200&&!oldWhy;i++){oldWhy=await ep.evaluate(async id=>(await listDrafts()).find(d=>d.draftId===id)?.depositError||'',old);if(!oldWhy)await ep.waitForTimeout(100);}
+    assert.match(oldWhy,/Pas de dossier OneDrive trouvé/);
+    await ep.evaluate(()=>{showPage('constats');renderDrafts();});await ep.locator(`[data-attach-select="${old}"]`).waitFor();
+    await ep.selectOption(`[data-attach-select="${old}"]`,{label:'CS26-016_PENA-METAUX'});await ep.click(`[data-attach-deposit="${old}"]`);
+    let oldOut=false;for(let i=0;i<200&&!oldOut;i++){oldOut=await ep.evaluate(async id=>!!(await listDrafts()).find(d=>d.draftId===id)?.storedInOneDrive,old);if(!oldOut)await ep.waitForTimeout(100);}
+    assert.ok(oldOut,'Ancien constat rangé après rattachement');
+    const oldUpload=ms.uploads.filter(u=>u.path.startsWith('/DEV-CONSULT/PENA Métaux/10_Constats/')&&u.path.endsWith('.html')).pop();assert.match(oldUpload.body,/aire Angalby/);
+    const oldStored=JSON.parse(fs.readFileSync(path.join(dataDir,'constats','dev-ep',old+'.json'),'utf8')).visit;
+    assert.equal(oldStored.caseReference,'CS26-016');assert.equal(oldStored.caseName,'aire Angalby');
+    assert.ok(!ms.uploads.some(u=>/PENA Métaux\/CONSTATS|PENA ENVIRONNEMENT/.test(u.path)));
     // ── Dossier passé « Terminé » dans le tableau : constat rangé effacé du serveur, puis de l'appareil ──
     FILES['/EXPERTISES/Expertises%202026/Tableau_suivi_expertises_privees.xlsx']=fixture('tableau-ep-termine.xlsx');ms.etag='"v2"';
     await ep.evaluate(()=>syncDossiers('force'));await ep.waitForFunction(()=>!dossierSync.running&&dossierSync.tableau?.etat==='ok'&&!readDossiers().some(d=>d.name==='EP26-001_ALPHA'));
