@@ -143,6 +143,6 @@ Les tableaux Excel de suivi sont la référence des dossiers ; dès que la lectu
 - Copie différée et regroupée (10 minutes après la dernière modification, quelques secondes après un changement de
   statut) : le forfait Airtable limite le nombre d'appels API par mois. L'état de la copie est affiché dans
   « Mes brouillons » (copié, en attente, erreur).
-- Expertise judiciaire : ni donneur d'ordre ni feuille de présence (noms) ne sont envoyés ; l'adresse du site l'est.
+- Expertise judiciaire : ni donneur d'ordre ni feuille de présence (noms) ne sont sauvegardés sur le serveur ; l'adresse du site l'est. À la clôture, la feuille de présence transite par le serveur (sans y être conservée) pour être rangée en fichier séparé dans le dossier OneDrive de la mission, à côté du rapport.
 - Les photos ne sont jamais envoyées à Airtable : elles restent sur le VPS et dans les rapports.
 - Variables facultatives : `AIRTABLE_CONSTATS_TABLE` (défaut `Constats`), `MIRROR_DELAY_MS`, `DATA_DIR` (défaut `/data`).
