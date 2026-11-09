@@ -46,7 +46,9 @@ async function noSavePicker(browser,options){const context=await browser.newCont
     await page.locator('#photo-input').setInputFiles({name:'test.png',mimeType:'image/png',buffer:Buffer.from(image.split(',')[1],'base64')});
     await page.waitForFunction(()=>state.photos.length===3&&pendingImports===0);
     assert.equal(await page.evaluate(()=>state.photos[2].position),null,'Imports do not inherit GPS');
-    await page.locator('[data-command="drawing"]').first().click();
+    // Liste de prise de vue : la photo la plus récente en tête (photo 1 en bas), numérotation inchangée
+    assert.deepEqual(await page.locator('.capture-card .photo-frame span').allTextContents(),['PHOTO 3','PHOTO 2','PHOTO 1'],'Dernière photo en tête de liste');
+    await page.locator('[data-command="drawing"]').last().click();
     await page.waitForFunction(()=>!document.querySelector('#save-drawing').disabled);
     const rect=await page.locator('#drawing-canvas').boundingBox();
     await page.mouse.move(rect.x+70,rect.y+70);await page.mouse.down();await page.mouse.move(rect.x+140,rect.y+70,{steps:10});await page.mouse.up();
@@ -55,14 +57,14 @@ async function noSavePicker(browser,options){const context=await browser.newCont
     assert.notEqual(await page.evaluate(()=>canvas.toDataURL()),painted,'Eraser changes pixels');
     await page.locator('#save-drawing').click();
     // Enregistrement sonore seul (fichier audio), barre d'arrêt fixe et visible
-    await page.locator('[data-command="audio"]').first().click();
+    await page.locator('[data-command="audio"]').last().click();
     const dialogBox=await page.locator('#audio-dialog').boundingBox();assert.ok(dialogBox.y+dialogBox.height<=900,'Boîte de note vocale contenue dans l’écran');
     await page.locator('#start-sound').click();await page.waitForFunction(()=>recording?.recorder?.state==='recording');
     assert.ok(await page.locator('#stop-recording').isVisible());assert.equal(await page.locator('#recording-status').evaluate(e=>getComputedStyle(e).position),'fixed');
     await page.waitForTimeout(1200);await page.locator('#stop-recording').click();await page.waitForFunction(()=>!recording&&!!state.photos[0].audio);
     assert.equal(await page.evaluate(()=>state.photos[0].comment||''),'','Enregistrement sonore : aucun texte ajouté');
     // Dictée : texte ajouté aux commentaires, sans enregistrement audio
-    await page.locator('[data-command="audio"]').first().click();await page.locator('#start-dictation').click();
+    await page.locator('[data-command="audio"]').last().click();await page.locator('#start-dictation').click();
     await page.waitForFunction(()=>/fissure horizontale/.test($('#recording-live').textContent));await page.locator('#stop-recording').click();
     await page.waitForFunction(()=>!recording&&/fissure horizontale en pied de mur/.test(state.photos[0].comment));
     // Navigateur qui ne répond plus : arrêt forcé en 4 s, texte déjà reconnu conservé, page utilisable
@@ -72,17 +74,17 @@ async function noSavePicker(browser,options){const context=await browser.newCont
     await page.waitForFunction(()=>!recording,null,{timeout:8000});assert.match(await page.evaluate(()=>state.photos[1].comment),/fissure horizontale/);assert.ok(await page.locator('#recording-status').isHidden());
     await page.evaluate(()=>{window.speechHang=false;state.photos[0].comment='';state.photos[1].comment='';renderCaptures();});
     // Grand cadre d'écriture
-    await page.locator('[data-command="expand"][data-field="description"]').first().click();assert.ok((await page.locator('#text-dialog-field').boundingBox()).height>=400,'Cadre d’écriture agrandi');
+    await page.locator('[data-command="expand"][data-field="description"]').last().click();assert.ok((await page.locator('#text-dialog-field').boundingBox()).height>=400,'Cadre d’écriture agrandi');
     await page.locator('#text-dialog-field').fill('Écrit dans le grand cadre');await page.locator('#save-text').click();
     assert.equal(await page.evaluate(()=>state.photos[0].description),'Écrit dans le grand cadre');
     // Changement de sujet d'une photo par la liste (effet immédiat, numéro conservé)
     await page.evaluate(()=>{addSubject('ZZ Façade test');renderCaptures();});const moved=await page.evaluate(()=>state.photos[0].number);
-    await page.locator('.photo-subject').first().selectOption('ZZ Façade test');
+    await page.locator('.photo-subject').last().selectOption('ZZ Façade test');
     await page.waitForFunction(n=>state.photos.find(p=>p.number===n).subject==='ZZ Façade test',moved);
     await page.evaluate(n=>{state.photos.find(p=>p.number===n).subject=state.subjects[0];renderSubjects();renderCaptures();},moved);
     assert.equal(await page.evaluate(()=>window.mediaRequests),1,'Audio reuses prepared microphone');
-    await page.locator('[data-edit="description"]').first().fill('Description conservée');
-    await page.locator('[data-edit="comment"]').first().fill('COMMENTAIRE_CONFIDENTIEL');
+    await page.locator('[data-edit="description"]').last().fill('Description conservée');
+    await page.locator('[data-edit="comment"]').last().fill('COMMENTAIRE_CONFIDENTIEL');
     await page.locator('#save-draft').click();await page.waitForFunction(()=>!unsaved);
     await page.locator('.new-inspection').first().click();await page.locator('[data-view="constats"]').click();
     await page.locator('.draft-card').filter({hasText:'Essai stabilisation'}).locator('[data-open-draft]').click();
