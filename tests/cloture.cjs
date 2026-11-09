@@ -32,8 +32,15 @@ async function noSavePicker(browser,options){const context=await browser.newCont
     // Feuille de présence (EP) : annexe du rapport HTML
     await page.evaluate(()=>{state.currentStep=4;renderStep();});
     const png=Buffer.from(photo.split(',')[1],'base64');fs.writeFileSync(path.join(out,'feuille.png'),png);
+    // Scan : coins de la feuille (étape 1), aperçu redressé en rendu document (étape 2), puis page ajoutée
     await page.setInputFiles('#attendance-input',path.join(out,'feuille.png'));
-    await page.waitForFunction(()=>state.attendance.length===1&&document.querySelectorAll('.attendance-thumb').length===1);
+    await page.waitForFunction(()=>$('#scan-dialog').open&&$('#scan-dialog').dataset.step==='coins');
+    await page.click('#scan-next');await page.waitForFunction(()=>$('#scan-dialog').dataset.step==='apercu');await page.click('#scan-ok');
+    await page.waitForFunction(()=>state.attendance.length===1&&document.querySelectorAll('.attendance-thumb').length===1&&!$('#scan-dialog').open);
+    assert.match(await page.evaluate(()=>state.attendance[0].slice(0,23)),/^data:image\/jpeg;base64,/,'Page scannée en JPEG');
+    // Scan abandonné (×) : aucune page ajoutée
+    await page.setInputFiles('#attendance-input',path.join(out,'feuille.png'));await page.waitForFunction(()=>$('#scan-dialog').open);
+    await page.click('#close-scan');await page.waitForFunction(()=>!$('#scan-dialog').open&&pendingImports===0);assert.equal(await page.evaluate(()=>state.attendance.length),1,'Scan abandonné : rien d’ajouté');
     let download=page.waitForEvent('download');await page.click('#export-html');let file=await download;
     let html=fs.readFileSync(await file.path(),'utf8');
     assert.match(html,/Annexe — Feuille de présence/);assert.match(html,/voir annexe/);

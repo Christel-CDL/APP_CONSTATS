@@ -3,8 +3,9 @@
 // (téléphone ↔ iPad) ; fin de constat ; feuille de présence photographiée.
 // Envoi : à chaque enregistrement local, le constat est marqué « à envoyer » puis transmis dès que le réseau le permet.
 // Les images (photos, notes, signatures) et sons sont envoyés une seule fois, sous leur empreinte SHA-256.
-// Expertise judiciaire : ni donneur d'ordre ni feuille de présence (noms) ne quittent l'appareil ; l'adresse du site
-// est sauvegardée ; la référence OPALEXE identifie l'expertise.
+// Expertise judiciaire : ni donneur d'ordre ni feuille de présence (noms) ne sont sauvegardés sur le serveur ; la feuille
+// ne fait que transiter, à la clôture, vers le dossier OneDrive de la mission. L'adresse du site est sauvegardée ; la
+// référence OPALEXE identifie l'expertise.
 function notify(message){$('.toast').textContent=message;$('.toast').classList.add('show');setTimeout(()=>$('.toast').classList.remove('show'),5000);}
 // Conversion locale (la politique de sécurité interdit fetch() sur une adresse data:).
 function dataUrlParts(src){const comma=src.indexOf(','),head=src.slice(5,comma),data=src.slice(comma+1),type=head.split(';')[0]||'application/octet-stream';
@@ -79,17 +80,18 @@ async function flushCloud(){if(!CLOUD||cloud.running||!ready)return;clearTimeout
   catch(error){cloud.error=error.message||'Sauvegarde serveur impossible';scheduleCloud(60000);}
   finally{cloud.running=false;renderCloudStatus();if(changed)renderDrafts();if(cloud.again){cloud.again=false;scheduleCloud(300);}}}
 // Constats terminés à ranger dans OneDrive : le rapport préparé à la clôture est envoyé au serveur, qui le dépose avec les
-// photos dans le dossier OneDrive de la mission (une fois le constat terminé sauvegardé sur le serveur).
+// photos dans le dossier OneDrive de la mission (une fois le constat terminé sauvegardé sur le serveur). La feuille de
+// présence part avec le rapport (pages lues sur cet appareil) : déposée en fichiers séparés, jamais conservée sur le serveur.
 async function flushDeposits(){let changed=false;
   for(const id of Object.keys(deposits())){if(dirtyIds()[id]||!cloudMeta()[id]?.version)continue;
     const draft=(await listDrafts()).find(d=>d.draftId===id),forget=()=>{const all=deposits();delete all[id];writeMap(CLOUD_DEPOSIT_KEY,all);};
     if(!draft||!draft.closedAt){forget();continue;}
     const report=closureReport(draft)||{html:'',name:''};
-    const res=await cloudFetch('/api/constats/'+encodeURIComponent(id)+'/depot',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({html:report.html,name:report.name})});
+    const res=await cloudFetch('/api/constats/'+encodeURIComponent(id)+'/depot',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({html:report.html,name:report.name,attendance:(draft.attendance||[]).filter(src=>typeof src==='string'&&src.startsWith('data:image/'))})});
     const body=await res.json().catch(()=>({}));
     if(res.status===428){cloud.error=body.message;continue;}
     if(res.ok||res.status===422||res.status===409||res.status===404){forget();changed=true;
-      if(res.ok){const {closureReport:old,depositError,...rest}=draft;await writeDraftRecord({...rest,storedInOneDrive:{at:new Date().toISOString(),fichiers:body.fichiers,dossier:String(body.dossier||'').slice(0,200)}});cloud.remote=null;notify(`Constat rangé dans OneDrive (${body.fichiers} fichier(s)) : ${body.dossier}.`);}
+      if(res.ok){const {closureReport:old,depositError,...rest}=draft;await writeDraftRecord({...rest,storedInOneDrive:{at:new Date().toISOString(),fichiers:body.fichiers,dossier:String(body.dossier||'').slice(0,200)}});cloud.remote=null;notify(`Constat rangé dans OneDrive (${body.fichiers} fichier(s)${body.feuille?', dont la feuille de présence':''}) : ${body.dossier}.`);}
       else{const {closureReport:old,...rest}=draft;await writeDraftRecord({...rest,depositError:String(body.message||'erreur').slice(0,300)});notify('Constat non rangé dans OneDrive : '+(body.message||'erreur')+'.');}continue;}
     throw new Error(body.message||'Rangement dans OneDrive impossible');}
   return changed;}
@@ -186,7 +188,7 @@ $('#close-visit').addEventListener('click',async()=>{
   await startNewVisit(undefined,{prepareAccess:false});showPage('constats');
   if(CLOUD){const all=deposits();all[closedId]=Date.now();writeMap(CLOUD_DEPOSIT_KEY,all);}
   scheduleCloud(500);
-  notify(CLOUD?'Constat terminé : rapport et photos seront rangés dans le dossier OneDrive de la mission.':'Constat terminé : retrouvez-le dans « Mes brouillons › Constats terminés ».');
+  notify(CLOUD?'Constat terminé : rapport, photos et feuille de présence seront rangés dans le dossier OneDrive de la mission.':'Constat terminé : retrouvez-le dans « Mes brouillons › Constats terminés ».');
 });
 // Rapport de rangement construit à partir du constat enregistré (sans toucher au constat affiché ni stocker le rapport).
 function closureReport(d){try{const ej=d.caseType==='ej',field=key=>ej&&CLIENT_FIELDS.includes(key)?'':d[key]||'',signature=d.expertSigns?d.expertSignature:null;
@@ -216,13 +218,15 @@ $('#delete-current')?.addEventListener('click',()=>deleteConstat(state.draftId))
 // Feuille de présence photographiée (liste des présents signée sur papier).
 function renderAttendance(){const list=$('#attendance-list');if(!list)return;const ej=state.caseType==='ej',pages=state.attendance||[];
   list.innerHTML=pages.map((src,i)=>`<figure class="attendance-thumb"><img src="${escapeHtml(src)}" alt="Feuille de présence, page ${i+1}"><figcaption>Page ${i+1} <button type="button" class="remove-action" data-attendance-remove="${i}" aria-label="Supprimer la page ${i+1}">×</button></figcaption></figure>`).join('');
-  $('#attendance-add').textContent=pages.length?'📷 Ajouter une page':'📷 Photographier la feuille de présence';$('#attendance-add').disabled=pages.length>=ATTENDANCE_MAX;
+  $('#attendance-add').textContent=pages.length?'📷 Scanner une autre page':'📷 Scanner la feuille de présence';$('#attendance-add').disabled=pages.length>=ATTENDANCE_MAX;
   $('#attendance-download').hidden=!(ej&&pages.length);
-  $('#attendance-note').textContent=ej?'Expertise judiciaire : la feuille porte des noms. Elle n’est pas reproduite dans le rapport ; téléchargez-la en fichier séparé pour votre dossier OneDrive. Le rapport indique seulement qu’elle existe.':'La feuille photographiée est jointe en annexe du rapport ou du PV.';}
+  $('#attendance-note').textContent=ej?'Expertise judiciaire : la feuille porte des noms. Elle n’est pas reproduite dans le rapport (qui indique seulement qu’elle existe) ; à la clôture, elle est rangée en fichier séparé dans le dossier OneDrive de la mission, avec le rapport et les photos. Elle peut aussi être téléchargée ici.':'La feuille photographiée est jointe en annexe du rapport ou du PV, et rangée aussi en fichier séparé dans le dossier OneDrive de la mission à la clôture.';}
 $('#attendance-add').addEventListener('click',()=>$('#attendance-input').click());
 $('#attendance-input').addEventListener('change',async e=>{const file=e.target.files[0];e.target.value='';if(!file)return;
   if((state.attendance||[]).length>=ATTENDANCE_MAX)return;pendingImports++;
-  try{const src=await compressPhoto(await readBlob(file));state.attendance=[...(state.attendance||[]),src];renderAttendance();saveVisit();notify('Feuille de présence ajoutée.');}
+  // Scan : recadrage sur les coins de la feuille, redressement et rendu document ; « × » abandonne la page.
+  try{const photo=await readBlob(file);let src=null;try{src=await scanDocument(photo);if(!src)return;}catch(error){console.warn('Scan :',error);src=await compressPhoto(photo);}
+    state.attendance=[...(state.attendance||[]),src];renderAttendance();saveVisit();notify(`Page ${state.attendance.length} de la feuille de présence ajoutée.`);}
   catch{alert('La photo de la feuille n’a pas pu être ajoutée. Réessayez.');}finally{pendingImports--;}});
 $('#attendance-list').addEventListener('click',e=>{const b=e.target.closest('[data-attendance-remove]');if(!b)return;const i=Number(b.dataset.attendanceRemove);
   if(!confirm(`Supprimer la page ${i+1} de la feuille de présence ?`))return;state.attendance.splice(i,1);renderAttendance();saveVisit();});

@@ -90,9 +90,15 @@ const FILES={'/EXPERT%20JUDICIAIRE/DOSSIERS/Dossiers%20en%20cours/Tableau_suivi_
     // Clôture en expertise judiciaire, ligne sans lien « Dossier OneDrive » : dossier retrouvé par son n° dans le dossier du tableau ;
     // pas de demande caméra / micro / position pour le constat vierge qui suit
     const png='data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==';
-    const ejDraft=await page.evaluate(async src=>{await startNewVisit(readDossiers().find(d=>d.name==='EJ26-0100_NOUVEAU-DOSSIER').id);addPhoto(src,'Vue générale',new Date().toISOString(),null,'import');saveVisit();return state.draftId;},png);
+    const ejDraft=await page.evaluate(async src=>{await startNewVisit(readDossiers().find(d=>d.name==='EJ26-0100_NOUVEAU-DOSSIER').id);addPhoto(src,'Vue générale',new Date().toISOString(),null,'import');state.attendance=[src,src];saveVisit();return state.draftId;},png);
     await page.evaluate(()=>{state.currentStep=4;renderStep();});await page.click('#close-visit');
-    for(let i=0;i<200&&!ms.uploads.some(u=>u.path.includes('NOUVEAU_TJ_MI26-0100')&&u.path.endsWith('.png'));i++)await page.waitForTimeout(100);
+    for(let i=0;i<200&&!ms.uploads.some(u=>u.path.includes('NOUVEAU_TJ_MI26-0100')&&u.path.includes('_feuille-presence_p2'));i++)await page.waitForTimeout(100);
+    // Feuille de présence (2 pages) rangée à côté du rapport, en fichiers séparés ; jamais conservée sur le serveur
+    const sheets=ms.uploads.filter(u=>u.path.includes('NOUVEAU_TJ_MI26-0100')&&/_feuille-presence_p[12]\.png$/.test(u.path));
+    assert.equal(sheets.length,2,'Feuille de présence EJ (2 pages) rangée dans OneDrive');
+    assert.ok(sheets.every(u=>/\/CONSTATS\/[\d-]+\/EJ26-0100_CONSTAT_[\d-]+_feuille-presence_p[12]\.png$/.test(u.path)&&u.type==='image/png'),'Nommée d’après le rapport, dans le dossier du constat');
+    const kept=JSON.parse(fs.readFileSync(path.join(dataDir,'constats','dev-ej',ejDraft+'.json'),'utf8')).visit;
+    assert.deepEqual(kept.attendance,[],'EJ : feuille de présence absente du constat sauvegardé sur le serveur');
     assert.ok(ms.uploads.some(u=>/^\/EXPERT JUDICIAIRE\/DOSSIERS\/Dossiers en cours\/NOUVEAU_TJ_MI26-0100_01-01-2026\/CONSTATS\/[\d-]+\/EJ26-0100_CONSTAT_[\d-]+\.html$/.test(u.path)),'Rapport EJ rangé dans le dossier retrouvé par son n°');
     assert.equal(await page.evaluate(()=>visitAccess.attempted),false,'Aucune demande d’accès après la clôture');
     assert.ok(ejDraft);
