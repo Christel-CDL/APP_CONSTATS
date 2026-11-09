@@ -65,3 +65,8 @@ dialog{max-height:calc(100dvh - 24px);max-width:calc(100vw - 16px);overflow:auto
 .stats-grid{grid-template-columns:repeat(2,1fr)}.dashboard-grid{grid-template-columns:1fr}#dashboard .continue-card{margin:0 0 18px}
 #inspection .backup-tools{margin:26px 0 10px}
 @media(max-width:760px){.stats-grid{grid-template-columns:1fr}}
+
+/* Scan de la feuille de présence : coins ajustables, puis aperçu redressé */
+#scan-dialog{max-width:1000px}.scan-stage{display:flex;justify-content:center;align-items:center;padding:12px;background:#1d2f2c;min-height:240px}#scan-canvas{display:block;touch-action:none;background:#fff;max-width:100%}
+.scan-tools{flex-wrap:wrap}.scan-tools>span{display:flex;gap:10px;align-items:center;flex-wrap:wrap;width:100%}.scan-tools .check-label{margin:0}.scan-tools .primary{margin-left:auto}
+#scan-dialog[data-step="coins"] .scan-preview-tools,#scan-dialog[data-step="apercu"] .scan-corners-tools{display:none}#scan-dialog[data-step="apercu"] #scan-canvas{box-shadow:0 4px 18px #0006}
